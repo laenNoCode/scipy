@@ -5,26 +5,26 @@
 #include <cblas.h>
 #include <iostream>
 
+#include "_revised_simplex.hpp"
 #include "_revised_simplex_utils.hpp"
 
 namespace linprog {
 
     template<class T>
-    void revised_simplex(
+    RevisedSimplexResult<T> revised_simplex(
         const std::size_t m,
         const std::size_t n,
         const T * c,
         const T * A,
         const T * b,
         const T & eps1,
-        const T * bfs,
-        T * solution) {
+        const T * bfs) {
 
         // We know how big B_indices, V_indices will be, so we can
         // allocate now and swap around later; unique_ptrs should
         // have no overhead if you're not constantly
         // constructing/destructing
-        auto V_size = abs(n - m);
+        auto V_size = (n - m) < 0 ? m - n : n - m;
         auto B_indices = std::make_unique<std::size_t[]>(m);
         auto V_indices = std::make_unique<std::size_t[]>(V_size);
 
@@ -71,6 +71,9 @@ namespace linprog {
         std::size_t min_idx;
         T min_val;
         T val0;
+
+        // We'll need a result to report
+        auto res = RevisedSimplexResult<T>(n);
 
         // Simplex method loops continuously until solution is found
         // or discovered to be impossible.
@@ -142,22 +145,23 @@ namespace linprog {
             // is optimal
 
             if (cj >= -eps1) {
-                // zero out nonbasis solutions (caller may have had
-                // something in here)
-                for (std::size_t ii = 0; ii < V_size; ++ii) {
-                    solution[V_indices[ii]] = 0;
-                }
-                // Assign the basis values
+
+                // Assign the basis values -- res.x is unique_ptr so
+                // all values are zero at construction;
+                // At the same time evaluate the dot product to get
+                // final objective function evaluation
                 for (std::size_t ii = 0; ii < m; ++ii) {
-                    solution[B_indices[ii]] = d[ii];
+                    res.x[B_indices[ii]] = d[ii];
+                    res.fun += d[ii]*c[B_indices[ii]];
                 }
                 // TODO: more informative exit
-                // return OptimizeResult({
-                //     'x': solution,
-                //     'nit': iters,
-                // })
-                std::cout << "nit: " << iters << std::endl;
-                return;
+                res.nit = iters;
+                // Seems like we could do better by hijacking above
+                // loop since we have m nonzero coefficients and
+                // we're already looping over them anyway
+                // res.fun = cblas_ddot(n, c, 1, res.x.get(), 1);
+                return res;
+
             }
 
             //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -190,7 +194,8 @@ namespace linprog {
             if (min_val == std::numeric_limits<T>::max()) {
                 // raise ValueError("System is unbounded.");
                 std::cout << "System is unbounded." << std::endl;
-                return;
+                res.nit = iters;
+                return res;
             }
 
             // k is outgoing (into V)
@@ -238,52 +243,52 @@ namespace linprog {
     }
 }
 
-int main() {
-
-    // double eps1 = 10e-5;
-    // std::size_t m = 2;
-    // std::size_t n = 5;
-    // double c[] {-2, -3, -4, 0, 0};
-    // // double A[] {
-    // //     3, 2, 1, 1, 0,
-    // //     2, 5, 3, 0, 1
-    // // };
-    // double A[] { // column major (b/c Fortran...)
-    //     3, 2,
-    //     2, 5,
-    //     1, 3,
-    //     1, 0,
-    //     0, 1
-    // };
-    // double b[] {10, 15};
-    // double bfs[] {0, 0, 0, 10, 15};
-    // double solution[] {1, 2, 3, 4, 5};
-
-    double eps1 = 10e-5;
-    std::size_t m = 3;
-    std::size_t n = 8;
-    double c[] {0, 1, 1, 1, -2, 0, 0, 0};
-    double A[] {
-        3, 1, -3,
-        1, 1, 0,
-        0, 1, 2,
-        0, 1, 1,
-        -1, 0, 5,
-        1, 0, 0,
-        0, 1, 0,
-        0, 0, 1
-    };
-    double b[] {1, 2, 6};
-    double bfs[] {0, 0, 0, 0, 0, 1, 2, 6};
-    double solution[] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-    linprog::revised_simplex(m, n, c, A, b, eps1, bfs, solution);
-
-    std::cout << "Solution:" << std::endl;
-    for (std::size_t ii = 0; ii < n; ++ii) {
-        std::cout << solution[ii] << " ";
-    }
-    std::cout << std::endl;
-
-    return EXIT_SUCCESS;
-}
+// int main() {
+//
+//     double eps1 = 10e-5;
+//     std::size_t m = 2;
+//     std::size_t n = 5;
+//     double c[] {-2, -3, -4, 0, 0};
+//     // double A[] {
+//     //     3, 2, 1, 1, 0,
+//     //     2, 5, 3, 0, 1
+//     // };
+//     double A[] { // column major (b/c Fortran...)
+//         3, 2,
+//         2, 5,
+//         1, 3,
+//         1, 0,
+//         0, 1
+//     };
+//     double b[] {10, 15};
+//     double bfs[] {0, 0, 0, 10, 15};
+//     double solution[] {1, 2, 3, 4, 5};
+//
+//     // double eps1 = 10e-5;
+//     // std::size_t m = 3;
+//     // std::size_t n = 8;
+//     // double c[] {0, 1, 1, 1, -2, 0, 0, 0};
+//     // double A[] {
+//     //     3, 1, -3,
+//     //     1, 1, 0,
+//     //     0, 1, 2,
+//     //     0, 1, 1,
+//     //     -1, 0, 5,
+//     //     1, 0, 0,
+//     //     0, 1, 0,
+//     //     0, 0, 1
+//     // };
+//     // double b[] {1, 2, 6};
+//     // double bfs[] {0, 0, 0, 0, 0, 1, 2, 6};
+//     // double solution[] = {0, 0, 0, 0, 0, 0, 0, 0};
+//
+//     linprog::revised_simplex(m, n, c, A, b, eps1, bfs, solution);
+//
+//     std::cout << "Solution:" << std::endl;
+//     for (std::size_t ii = 0; ii < n; ++ii) {
+//         std::cout << solution[ii] << " ";
+//     }
+//     std::cout << std::endl;
+//
+//     return EXIT_SUCCESS;
+// }

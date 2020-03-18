@@ -1,0 +1,18 @@
+from distutils.core import setup
+from distutils.extension import Extension
+from Cython.Build import cythonize
+
+import numpy as np
+
+extensions = [
+    Extension(
+        'test_revised_simplex',
+        ['test_revised_simplex.pyx'],
+        include_dirs=['src/', np.get_include()],
+        extra_link_args=['-llapack', '-lblas'],
+        extra_compile_args=['-std=c++14']),
+]
+
+setup(
+    ext_modules=cythonize(extensions),
+)
