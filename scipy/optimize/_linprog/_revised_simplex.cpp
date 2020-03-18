@@ -52,6 +52,8 @@ namespace linprog {
         for (std::size_t ii = 0; ii < m; ++ii) {
             for (std::size_t jj = 0; jj < m; ++jj) {
                 AB[ii + jj*m] = A[ii + B_indices[jj]*m];
+
+                // Initialize Binv with AB
                 Binv[ii + jj*m] = A[ii + B_indices[jj]*m];
             }
             for (std::size_t jj = 0; jj < V_size; ++jj) {
@@ -70,8 +72,8 @@ namespace linprog {
         T min_val;
         T val0;
 
-        // Simplex method loops continuously until solution is found or
-        // discovered to be impossible.
+        // Simplex method loops continuously until solution is found
+        // or discovered to be impossible.
         std::size_t iters = 0;
         while(true) {
             ++iters;
@@ -104,12 +106,13 @@ namespace linprog {
 
             // c_tilde     modified cost vector
 
-            // c_tilde[V_indices] = c[V_indices] - c[B_indices] @ Binv @ A[:, V_indices]
+            // c_tilde[V_indices] = c[V_indices] - (
+            //     c[B_indices] @ Binv @ A[:, V_indices])
             // c_tilde_V = cV - cB @ Binv @ AV
             // c_tilde_V needs to always have what cV has in it
             cblas_dgemm(
-                    CblasColMajor, CblasNoTrans, CblasNoTrans, m, V_size,
-                    m, 1.0, Binv.get(), m, AV.get(), m, 0.0,
+                    CblasColMajor, CblasNoTrans, CblasNoTrans, m,
+                    V_size, m, 1.0, Binv.get(), m, AV.get(), m, 0.0,
                     c_tilde_intermediate.get(), m);
             cblas_dgemv(
                 CblasColMajor, CblasTrans, m, V_size, -1.0,
@@ -118,12 +121,16 @@ namespace linprog {
 
             //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             // Step 6
-            // compute j s.t. c_tilde[j] <= c_tilde[k] for all k in V_indices
+            // compute j s.t. c_tilde[j] <= c_tilde[k] for all k in
+            // V_indices
             // cj minimum cost value (negative) of non-basic columns
             // j column in A corresponding to minimum cost value
 
             // nonzero values can only be in V_indices, so only check
             // there
+            // TODO: we're doing more work here than we need to; we
+            //       could simply keep track of the min value and its
+            //       location and update when B and V are updated
             linprog::argmin_and_element(V_size, c_tilde_V, j, cj);
             // Map local index in c_tilde_V to the correct index in
             // c_tilde:
@@ -166,7 +173,8 @@ namespace linprog {
 
             //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             // Step 9
-            // compute i s.t. w[i]>0 and d[i]/w[i] is a smallest positive ratio
+            // compute i s.t. w[i]>0 and d[i]/w[i] is a smallest
+            // positive ratio
             // swap column j into basis and swap column i out of basis
             min_val = std::numeric_limits<T>::max();
             for (std::size_t ii = 0; ii < m; ++ii) {
@@ -179,7 +187,7 @@ namespace linprog {
                 }
             }
 
-            if (!min_idx) { // i == 0
+            if (min_val == std::numeric_limits<T>::max()) {
                 // raise ValueError("System is unbounded.");
                 std::cout << "System is unbounded." << std::endl;
                 return;
@@ -203,15 +211,23 @@ namespace linprog {
             cB[min_idx] = c[j];
             for (std::size_t jj = 0; jj < V_size; ++jj) {
                 if (j == V_indices[jj]) {
-                    V_indices[jj] = k;
-                    c_tilde_V[jj] = c[k];
+                    V_indices[j] = k;
                     for (std::size_t ii = 0; ii < m; ++ii) {
-                        AB[ii + min_idx*m] = A[ii + B_indices[min_idx]*m];
-                        Binv[ii + min_idx*m] = A[ii + B_indices[min_idx]*m];
-                        AV[ii + jj*m] = A[ii + V_indices[jj]*m];
+                        AB[ii + min_idx*m] = A[ii + j*m];
+                        AV[ii + jj*m] = A[ii + k*m];
+
+                        // Binv needs to have AV completely restored
+                        // TODO: Can we just update Binv?
+                        for (std::size_t kk = 0; kk < m; ++kk) {
+                            Binv[ii + kk*m] = A[ii + B_indices[kk]*m];
+                        }
                     }
                     break;
                 }
+            }
+            // c_tilde_V needs cV restored
+            for (std::size_t jj = 0; jj < V_size; ++jj) {
+                c_tilde_V[jj] = c[V_indices[jj]];
             }
 
             //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -224,24 +240,42 @@ namespace linprog {
 
 int main() {
 
-    double eps1 = 10e-5;
-    std::size_t m = 2;
-    std::size_t n = 5;
-    double c[] {-2, -3, -4, 0, 0};
-    // double A[] {
-    //     3, 2, 1, 1, 0,
-    //     2, 5, 3, 0, 1
+    // double eps1 = 10e-5;
+    // std::size_t m = 2;
+    // std::size_t n = 5;
+    // double c[] {-2, -3, -4, 0, 0};
+    // // double A[] {
+    // //     3, 2, 1, 1, 0,
+    // //     2, 5, 3, 0, 1
+    // // };
+    // double A[] { // column major (b/c Fortran...)
+    //     3, 2,
+    //     2, 5,
+    //     1, 3,
+    //     1, 0,
+    //     0, 1
     // };
-    double A[] { // column major (b/c Fortran...)
-        3, 2,
-        2, 5,
-        1, 3,
-        1, 0,
-        0, 1
+    // double b[] {10, 15};
+    // double bfs[] {0, 0, 0, 10, 15};
+    // double solution[] {1, 2, 3, 4, 5};
+
+    double eps1 = 10e-5;
+    std::size_t m = 3;
+    std::size_t n = 8;
+    double c[] {0, 1, 1, 1, -2, 0, 0, 0};
+    double A[] {
+        3, 1, -3,
+        1, 1, 0,
+        0, 1, 2,
+        0, 1, 1,
+        -1, 0, 5,
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1
     };
-    double b[] {10, 15};
-    double bfs[] {0, 0, 0, 10, 15};
-    double solution[] {1, 2, 3, 4, 5};
+    double b[] {1, 2, 6};
+    double bfs[] {0, 0, 0, 0, 0, 1, 2, 6};
+    double solution[] = {0, 0, 0, 0, 0, 0, 0, 0};
 
     linprog::revised_simplex(m, n, c, A, b, eps1, bfs, solution);
 
