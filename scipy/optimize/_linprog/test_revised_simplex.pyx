@@ -4,48 +4,70 @@
 
 cimport cython
 from libcpp.memory cimport unique_ptr
+from cython.operator cimport dereference as dref
 
-cdef extern from "_revised_simplex.cpp" namespace "linprog" nogil:
+cimport numpy as np
+import numpy as np
+
+cdef extern from "../rs.cpp" nogil:
     pass
 
-cdef extern from "_revised_simplex.hpp" namespace "linprog" nogil:
-    cdef cppclass RevisedSimplexResult[T]:
-        unique_ptr[T[]] x
-        size_t nit
-        T fun
-        T * get_x() # helper function for Cython to get at contents of unique_ptr
+cdef extern from "../utils.hpp" nogil:
+    cdef enum Status:
+        StatusSuccess
+        StatusUnbounded
+        StatusLUFailure
+        StatusDGETRF_illegal_value
+        StatusInverseFailure
+        StatusDGETRI_illegal_value
+        StatusNotImplemented
 
-    RevisedSimplexResult[T] revised_simplex[T](
-        const size_t m,
-        const size_t n,
-        const T * c,
-        const T * A,
-        const T * b,
-        const T & eps1,
-        const T * bfs)
+    cdef cppclass LPResult:
+        size_t m
+        size_t n
+        unique_ptr[double[]] x
+        double fun
+        size_t nit
+        Status status
+
+        LPResult() except +
+        const double * get_x()
+
+cdef extern from "../rs.hpp" nogil:
+    LPResult revised_simplex(
+        const size_t & m,
+        const size_t & n,
+        const double * c,
+        const double * A,
+        const double * b,
+        const double * bfs,
+        const size_t * B_tilde0)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.nonecheck(False)
 def test_linprog(
         const double[::1] & c,
-        const double[::1, :] & A, # Fortran order for now
+        const double[:, ::1] & A,
         const double[::1] & b,
         const double[::1] & bfs,
-        const double & eps1=10e-5):
+        size_t[::1] B_tilde0=None):
     '''Forward arguments to C++ implementation.'''
 
     cdef size_t m
     cdef size_t n
+    if B_tilde0 is None:
+        B_tilde0 = np.argwhere(bfs).flatten().astype('uint64')
     cdef size_t ii
     m = A.shape[0]
     n = A.shape[1]
 
-    cdef RevisedSimplexResult[double] res = revised_simplex[double](
-        m, n, &c[0], &A[0][0], &b[0], eps1, &bfs[0])
+    cdef LPResult res = revised_simplex(
+        m, n, &c[0], &A[0][0], &b[0], &bfs[0], &B_tilde0[0])
 
+    cdef const double * x_ptr = res.get_x()
     return {
-        'x': [res.get_x()[ii] for ii in range(n)],
+        'x': [x_ptr[ii] for ii in range(n)],
         'nit': res.nit,
         'fun': res.fun,
     }

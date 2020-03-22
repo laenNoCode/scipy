@@ -8,9 +8,17 @@ extensions = [
     Extension(
         'test_revised_simplex',
         ['test_revised_simplex.pyx'],
-        include_dirs=['src/', np.get_include()],
+        include_dirs=[np.get_include()],
         extra_link_args=['-llapack', '-lblas'],
-        extra_compile_args=['-std=c++14']),
+        extra_compile_args=['-std=c++14'],
+        define_macros=[
+            ('EXPLICIT_INVERSE', None),
+            ('DEBUG', None),
+        ],
+        undef_macros=[
+            #'EXPLICIT_INVERSE',
+            #'DEBUG'
+        ],),
 ]
 
 setup(

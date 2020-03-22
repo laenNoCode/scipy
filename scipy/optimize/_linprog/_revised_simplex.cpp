@@ -1,294 +1,328 @@
-#include <vector>
-#include <utility>
-#include <limits>
-#include <memory>
+/// Dense matrix implementation of the revised simplex method.
+//
+// Follows the algorithm described in Chapter 3.7 of [1]_.
+// Uses BLAS/LAPACK calls for dense matrix factorization and linear algebra.
+//
+// #define EXPLICIT_INVERSE to compute B^-1 and use it for calculations.  The
+// Sherman-Morrison equation is used to update B^-1 every iteration.
+//
+// If EXPLICIT_INVERSE is not defined, then the LU decomposition will be run
+// run every [num] iterations.
+//
+// #define DEBUG for lots of debugging info to stdout each iteration.
+//
+// References
+// ----------
+// .. [1] Shu-Cherng, Fang, and Sarat Puthenpura. "Linear Optimization and
+//        Extensions. Theory and Algorithms." (1993).
+// .. [2] https://en.wikipedia.org/wiki/Sherman%E2%80%93Morrison_formula
+
+// Define these in setup.py
+//#define EXPLICIT_INVERSE 1
+//#define DEBUG 1
+
+#include <algorithm>
 #include <cblas.h>
 #include <iostream>
+#include <limits>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "_revised_simplex.hpp"
-#include "_revised_simplex_utils.hpp"
 
-namespace linprog {
+LPResult revised_simplex(const std::size_t m, const std::size_t n,
+                         const double *c, const double *A, const double *b,
+                         const double *bfs, const idx_t *B_tilde0) {
+#ifdef DEBUG
+  std::cout << "==========STARTING REVISED_SIMPLEX==========" << std::endl;
+#endif
 
-    template<class T>
-    RevisedSimplexResult<T> revised_simplex(
-        const std::size_t m,
-        const std::size_t n,
-        const T * c,
-        const T * A,
-        const T * b,
-        const T & eps1,
-        const T * bfs) {
+  // Intial solution is the basic feasible solution (bfs)
+  auto res = LPResult(m, n, bfs);
 
-        // We know how big B_indices, V_indices will be, so we can
-        // allocate now and swap around later; unique_ptrs should
-        // have no overhead if you're not constantly
-        // constructing/destructing
-        auto V_size = (n - m) < 0 ? m - n : n - m;
-        auto B_indices = std::make_unique<std::size_t[]>(m);
-        auto V_indices = std::make_unique<std::size_t[]>(V_size);
+  // Populate basis indices
+  std::vector<idx_t> B_tilde = initial_B_tilde(B_tilde0, m);
+  std::vector<idx_t> N_tilde = initial_N_tilde(B_tilde, n);
+  std::size_t mn = N_tilde.size(); // m - n
 
-        // Find current basis indices (where) and nonbasis indicies
-        // (wheren't) from the basic feasible solution
-        linprog::argwhere_and_wherenot(
-                n, bfs, B_indices, V_indices);
+  // Put all basis costs in cB to begin with
+  auto cB = std::make_unique<double[]>(m);
+  take(c, B_tilde, cB);
 
-        // Pre-initialize c_tilde
-        auto c_tilde_V = std::make_unique<T[]>(V_size); // n - m zeros
-        auto c_tilde_intermediate = std::make_unique<T[]>(m*V_size);
-        std::size_t j; // index of min value of c_tilde
-        T cj; // min value of c_tilde
+  // It seem like we do need a copy of N to work with
+  auto N = std::make_unique<double[]>(m * mn);
+  auto cN = std::make_unique<double[]>(mn);
+  take_cols(m, n, A, N_tilde, mn, N);
+  take(c, N_tilde, cN);
 
-        // Pre-initialize A[:, B_indices], A[:, V_indices], Binv, d,
-        // cB, cV, w;  All are initialized to 0
-        auto AB = std::make_unique<T[]>(m*m);
-        auto AV = std::make_unique<T[]>(m*V_size);
-        auto Binv = std::make_unique<T[]>(m*m);
-        auto d = std::make_unique<T[]>(m);
-        auto cB = std::make_unique<T[]>(m);
-        auto w = std::make_unique<T[]>(m);
+  // Info for initial LU factorization
+  auto LU = std::make_unique<double[]>(m * m);
+  auto IPIV = std::make_unique<int[]>(m);
+  int INFO;
+  int m_int = (int)m;
 
-        // Pack in initial values
-        for (std::size_t ii = 0; ii < m; ++ii) {
-            for (std::size_t jj = 0; jj < m; ++jj) {
-                AB[ii + jj*m] = A[ii + B_indices[jj]*m];
+  // Intermediate solutions:
+  auto w = std::make_unique<double[]>(m);
+  auto rN = std::make_unique<double[]>(mn);
+  auto d = std::make_unique<double[]>(m);
 
-                // Initialize Binv with AB
-                Binv[ii + jj*m] = A[ii + B_indices[jj]*m];
-            }
-            for (std::size_t jj = 0; jj < V_size; ++jj) {
-                AV[ii + jj*m] = A[ii + V_indices[jj]*m];
-            }
-            cB[ii] = c[B_indices[ii]];
-        }
-        for (std::size_t ii = 0; ii < V_size; ++ii) {
-            c_tilde_V[ii] = c[V_indices[ii]];
-        }
+#ifndef EXPLICIT_INVERSE
 
-        // Initialize outside loop so we don't do it every iteration:
-        // not going to be a big deal, but we're looking for speed
-        std::size_t k;
-        std::size_t min_idx;
-        T min_val;
-        T val0;
+  // How often do we refactor? (Not used when EXPLICIT_INVERSE defined!
+  const std::size_t refactor_every = 1; // ~30 when doing BG updates
 
-        // We'll need a result to report
-        auto res = RevisedSimplexResult<T>(n);
+  char NOTRANS[] = "N";
+  char TRANS[] = "T";
+  int NRHS = 1;
+  int LDB = m;
 
-        // Simplex method loops continuously until solution is found
-        // or discovered to be impossible.
-        std::size_t iters = 0;
-        while(true) {
-            ++iters;
+#else
+  // If we are explicitly inverting B, then we can rely on Sherman-Morrison
+  // while iterating. Compute the inverse explcitly the first time (most likely
+  // identity matrix, but do the full thing in case we get a curve ball)
 
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 1
-            // compute B^-1
+  // We will need some memory to do some calculations.  The strategy will be
+  // allocate enough for both matrix inversion and tmps needed for
+  // Sherman-Morrison update
+  int LWORK = m * m; // WORK size for matrix inversion
 
-            // Binv    inverse of the basis (directly computed)
+  // Temps for the Sherman-Morrison update.
+  int actual_work_size =
+      m > 4 ? m * m : m * 4; // make enough room for temps in WORK
+  auto WORK = std::make_unique<double[]>(actual_work_size);
+  auto u_ptr = WORK.get();
+  auto ejp_ptr = WORK.get() + m;
+  auto qq_ptr = WORK.get() + 2 * m;
+  auto r_ptr = WORK.get() + 3 * m;
 
-            // Binv = np.linalg.pinv(A[:, B_indices])
+  // Do the actual inversion
+  auto Binv = std::make_unique<double[]>(m * m);
+  inverse(m, n, B_tilde, A, m_int, Binv, IPIV, WORK, LWORK, INFO);
 
-            // Binv always needs to start out with what AB has in it!
-            // TODO: LU factorization
-            linprog::inverse(m, Binv);
+#endif
 
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 2
-            // compute d = B^-1 * b
+  // Loop till you just can't loop anymore!
+  while (true) {
 
-            // d    current solution vector
-            // d = Binv @ b
-            cblas_dgemv(
-                CblasColMajor, CblasNoTrans, m, m, 1.0, Binv.get(), m,
-                b, 1, 0.0, d.get(), 1);
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 3/Step 4/Step 5
-            // compute c_tilde = c_V - c_B * B^-1 * V
-
-            // c_tilde     modified cost vector
-
-            // c_tilde[V_indices] = c[V_indices] - (
-            //     c[B_indices] @ Binv @ A[:, V_indices])
-            // c_tilde_V = cV - cB @ Binv @ AV
-            // c_tilde_V needs to always have what cV has in it
-            cblas_dgemm(
-                    CblasColMajor, CblasNoTrans, CblasNoTrans, m,
-                    V_size, m, 1.0, Binv.get(), m, AV.get(), m, 0.0,
-                    c_tilde_intermediate.get(), m);
-            cblas_dgemv(
-                CblasColMajor, CblasTrans, m, V_size, -1.0,
-                c_tilde_intermediate.get(), m, cB.get(), 1, 1.0,
-                c_tilde_V.get(), 1);
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 6
-            // compute j s.t. c_tilde[j] <= c_tilde[k] for all k in
-            // V_indices
-            // cj minimum cost value (negative) of non-basic columns
-            // j column in A corresponding to minimum cost value
-
-            // nonzero values can only be in V_indices, so only check
-            // there
-            // TODO: we're doing more work here than we need to; we
-            //       could simply keep track of the min value and its
-            //       location and update when B and V are updated
-            linprog::argmin_and_element(V_size, c_tilde_V, j, cj);
-            // Map local index in c_tilde_V to the correct index in
-            // c_tilde:
-            j = V_indices[j];
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 7
-            // if cj >= 0 , then we're done -- return solution which
-            // is optimal
-
-            if (cj >= -eps1) {
-
-                // Assign the basis values -- res.x is unique_ptr so
-                // all values are zero at construction;
-                // At the same time evaluate the dot product to get
-                // final objective function evaluation
-                for (std::size_t ii = 0; ii < m; ++ii) {
-                    res.x[B_indices[ii]] = d[ii];
-                    res.fun += d[ii]*c[B_indices[ii]];
-                }
-                // TODO: more informative exit
-                res.nit = iters;
-                // Seems like we could do better by hijacking above
-                // loop since we have m nonzero coefficients and
-                // we're already looping over them anyway
-                // res.fun = cblas_ddot(n, c, 1, res.x.get(), 1);
-                return res;
-
-            }
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 8
-            // compute w = B^-1 * a[j]
-
-            // w: relative weight (vector) of cols entering the basis
-            // w = Binv @ Aj
-            cblas_dgemv(
-                CblasColMajor, CblasNoTrans, m, m, 1.0, Binv.get(), m,
-                A + j*m, 1, 0.0, w.get(), 1);
-
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 9
-            // compute i s.t. w[i]>0 and d[i]/w[i] is a smallest
-            // positive ratio
-            // swap column j into basis and swap column i out of basis
-            min_val = std::numeric_limits<T>::max();
-            for (std::size_t ii = 0; ii < m; ++ii) {
-                if (w[ii] > eps1) {
-                    val0 = d[ii]/w[ii];
-                    if (val0 < min_val) {
-                        min_idx = ii;
-                        min_val = val0;
-                    }
-                }
-            }
-
-            if (min_val == std::numeric_limits<T>::max()) {
-                // raise ValueError("System is unbounded.");
-                std::cout << "System is unbounded." << std::endl;
-                res.nit = iters;
-                return res;
-            }
-
-            // k is outgoing (into V)
-            // j in incoming (into B)
-            // Here's what the python does:
-            // k = B_indices[i];
-            // B_indices[i] = j;
-            // V_indices[j == V_indices] = k
-
-            // We have a little more to do because CBLAS does things
-            // inplace, so we need to repopulate some variables for
-            // the next time around the horn....
-
-            // Do swap and updates concurrently, taking advantage of
-            // any looping that's happening
-            k = B_indices[min_idx];
-            B_indices[min_idx] = j;
-            cB[min_idx] = c[j];
-            for (std::size_t jj = 0; jj < V_size; ++jj) {
-                if (j == V_indices[jj]) {
-                    V_indices[j] = k;
-                    for (std::size_t ii = 0; ii < m; ++ii) {
-                        AB[ii + min_idx*m] = A[ii + j*m];
-                        AV[ii + jj*m] = A[ii + k*m];
-
-                        // Binv needs to have AV completely restored
-                        // TODO: Can we just update Binv?
-                        for (std::size_t kk = 0; kk < m; ++kk) {
-                            Binv[ii + kk*m] = A[ii + B_indices[kk]*m];
-                        }
-                    }
-                    break;
-                }
-            }
-            // c_tilde_V needs cV restored
-            for (std::size_t jj = 0; jj < V_size; ++jj) {
-                c_tilde_V[jj] = c[V_indices[jj]];
-            }
-
-            //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            // Step 10
-            // REPEAT
-
-        }
+#ifdef DEBUG
+    std::cout << "**********ITER " << res.nit << "**********" << std::endl;
+    std::cout << "B_tilde: [ ";
+    for (auto const &el : B_tilde) {
+      std::cout << el << ' ';
     }
-}
+    std::cout << ']' << std::endl;
+    std::cout << "N_tilde: [ ";
+    for (auto const &el : N_tilde) {
+      std::cout << el << ' ';
+    }
+    std::cout << ']' << std::endl;
+#endif
 
-// int main() {
-//
-//     double eps1 = 10e-5;
-//     std::size_t m = 2;
-//     std::size_t n = 5;
-//     double c[] {-2, -3, -4, 0, 0};
-//     // double A[] {
-//     //     3, 2, 1, 1, 0,
-//     //     2, 5, 3, 0, 1
-//     // };
-//     double A[] { // column major (b/c Fortran...)
-//         3, 2,
-//         2, 5,
-//         1, 3,
-//         1, 0,
-//         0, 1
-//     };
-//     double b[] {10, 15};
-//     double bfs[] {0, 0, 0, 10, 15};
-//     double solution[] {1, 2, 3, 4, 5};
-//
-//     // double eps1 = 10e-5;
-//     // std::size_t m = 3;
-//     // std::size_t n = 8;
-//     // double c[] {0, 1, 1, 1, -2, 0, 0, 0};
-//     // double A[] {
-//     //     3, 1, -3,
-//     //     1, 1, 0,
-//     //     0, 1, 2,
-//     //     0, 1, 1,
-//     //     -1, 0, 5,
-//     //     1, 0, 0,
-//     //     0, 1, 0,
-//     //     0, 0, 1
-//     // };
-//     // double b[] {1, 2, 6};
-//     // double bfs[] {0, 0, 0, 0, 0, 1, 2, 6};
-//     // double solution[] = {0, 0, 0, 0, 0, 0, 0, 0};
-//
-//     linprog::revised_simplex(m, n, c, A, b, eps1, bfs, solution);
-//
-//     std::cout << "Solution:" << std::endl;
-//     for (std::size_t ii = 0; ii < n; ++ii) {
-//         std::cout << solution[ii] << " ";
-//     }
-//     std::cout << std::endl;
-//
-//     return EXIT_SUCCESS;
-// }
+    // Don't do this step if we're doing explicit inverse matrix updates
+#ifndef EXPLICIT_INVERSE
+
+    // (Step 0: Factorizations)
+    if (res.nit % refactor_every == 0) {
+
+#ifdef DEBUG
+      std::cout << "Doing LU factorization!" << std::endl;
+      std::cout << "B matrix is:" << std::endl;
+      for (idx_t ii = 0; ii < m; ++ii) {
+        for (auto const &el : B_tilde) {
+          std::cout << A[el + ii * n] << ' ';
+        }
+        std::cout << std::endl;
+      }
+#endif
+
+      // NOTE: U: CblasUnit, L : CBlasNonUnit (Upper has ones, lower has no
+      // ones)
+      Status status = lu(m, n, B_tilde, A, m_int, LU, IPIV, INFO);
+      if (status != StatusSuccess) {
+        res.status = status;
+        return res;
+      }
+
+    } else {
+
+      // Instead of recomputing the factorization, do an update!
+      std::cerr << "Not implemented yet!" << std::endl;
+      res.status = StatusNotImplemented;
+      return res;
+    }
+#endif
+
+    // Step 1: Compute the "simplex multipliers"
+    //     B.T @ w = cB => w = B.T^-1 @ cB
+    //     U.T @ y = cB
+    //     L.T @ w = y
+#ifdef DEBUG
+    std::cout << "cB: ";
+    print_matrix(1, m, cB.get());
+    std::cout << std::endl;
+#endif
+#ifndef EXPLICIT_INVERSE
+    std::copy(cB.get(), cB.get() + m, w.get());
+    dgetrs_(NOTRANS, &m_int, &NRHS, LU.get(), &m_int, IPIV.get(), w.get(), &LDB,
+            &INFO);
+#else
+    // Use explicit Binv:
+    cblas_dgemv(CblasRowMajor, CblasTrans, m, m, 1.0, Binv.get(), m, cB.get(),
+                1, 0.0, w.get(), 1);
+#endif
+#ifdef DEBUG
+    std::cout << "w: [ ";
+    print_matrix(1, m, w.get());
+    std::cout << ']' << std::endl;
+#endif
+
+    // Step 2: Compute the reduced costs
+    //     rN = cN - w.T @ N
+
+#ifdef DEBUG
+    std::cout << "cN: [ ";
+    print_matrix(1, mn, cN.get());
+    std::cout << "]" << std::endl;
+#endif
+    std::copy(cN.get(), cN.get() + mn, rN.get());
+#ifdef DEBUG
+    std::cout << "N matrix is:" << std::endl;
+    for (idx_t ii = 0; ii < m; ++ii) {
+      for (idx_t jj = 0; jj < mn; ++jj) {
+        std::cout << N.get()[jj + ii * mn] << ' ';
+      }
+      std::cout << std::endl;
+    }
+#endif
+    cblas_dgemv(CblasColMajor, CblasNoTrans, mn, m, -1.0, N.get(), mn, w.get(),
+                1, 1.0, rN.get(), 1);
+#ifdef DEBUG
+    std::cout << "rN: [ ";
+    print_matrix(1, mn, rN.get());
+    std::cout << ']' << std::endl;
+#endif
+
+    // Step 3: Check for optimality / Step 4: Enter the basis
+    idx_t q = choose_leaving(N_tilde, rN, res);
+    if (res.status == StatusQNotFound) {
+#ifdef DEBUG
+      std::cout << "Found optimal solution!" << std::endl;
+#endif
+      res.status = StatusSuccess;
+      res.fun = cblas_ddot(n, c, 1, res.x.get(), 1);
+      return res;
+    }
+    // TODO: better way to look up local index?
+    idx_t q_local = std::distance(
+        N_tilde.cbegin(), std::find(N_tilde.cbegin(), N_tilde.cend(), q));
+#ifdef DEBUG
+    std::cout << "q/q_local: " << q << "/" << q_local << std::endl;
+    std::string truth = N_tilde[q] == q ? "True" : "False";
+    std::cout << "N_tilde[q_local] == q: " << N_tilde[q] << " == " << q << ", "
+              << truth << std::endl;
+#endif
+
+    // Step 5: Edge direction
+    //    B d = -Aq
+#ifndef EXPLICIT_INVERSE
+    // L U d = -Aq
+    for (idx_t ii = 0; ii < m; ++ii) {
+      d.get()[ii] = -A[q + ii * n];
+    }
+    dgetrs_(TRANS, &m_int, &NRHS, LU.get(), &m_int, IPIV.get(), d.get(), &LDB,
+            &INFO);
+#else
+    // Use explicit matrix inverse:
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, m, m, -1.0, Binv.get(), m, &A[q],
+                n, 0.0, d.get(), 1);
+#endif
+
+#ifdef DEBUG
+    std::cout << "d: [";
+    print_matrix(1, m, d.get());
+    std::cout << "]" << std::endl;
+#endif
+
+    // Step 6: Check for unboundedness / Leave the basis and step-length
+    res.status = StatusJPSearch;
+    double alpha = std::numeric_limits<double>::max(); // should be a better way
+                                                       // to do this...
+    double potential_alpha;
+    idx_t jp = 0;       // this value not used unless entering basis found
+    idx_t jp_local = 0; // this value not used unless jp found
+    idx_t d_idx = 0;
+#ifdef DEBUG
+    std::cout << "alphas: [ ";
+#endif
+    for (auto const &basis_idx : B_tilde) {
+      if (d.get()[d_idx] < 0) { // TODO: use tol instead of 0
+        potential_alpha = -res.x.get()[basis_idx] / d.get()[d_idx];
+#ifdef DEBUG
+        std::cout << potential_alpha << ' ';
+#endif
+        // Bland's rule: if tie, choose smallest index
+        if (potential_alpha < alpha) {
+          alpha = potential_alpha;
+          jp = basis_idx;
+          jp_local = d_idx;
+          res.status = StatusSuccess; // let res know we found a jp
+        }
+      }
+      ++d_idx;
+    }
+#ifdef DEBUG
+    std::cout << "]" << std::endl;
+#endif
+    if (res.status == StatusJPSearch) {
+      std::cerr << "Solution is unbounded!" << std::endl;
+      res.status = StatusUnbounded;
+      return res;
+    }
+#ifdef DEBUG
+    std::cout << "alpha: " << alpha << std::endl;
+    std::cout << "jp/jp_local: " << jp << "/" << jp_local << std::endl;
+    truth = B_tilde[jp_local] == jp ? "True" : "False";
+    std::cout << "B_tilde[jp_local] == jp: " << B_tilde[jp_local]
+              << " == " << jp << ", " << truth << std::endl;
+#endif
+
+    // Step 8: Update
+    res.x.get()[q] = alpha;
+    d_idx = 0;
+    for (auto const &basis_idx : B_tilde) {
+      res.x.get()[basis_idx] += alpha * d.get()[d_idx];
+      ++d_idx;
+    }
+#ifdef DEBUG
+    std::cout << "x: [ ";
+    print_matrix(1, n, res.x.get());
+    std::cout << "]" << std::endl;
+    std::cout << "Updating N:" << std::endl;
+#endif
+    add_basis_col(m, mn, N, cN, n, A, c, q_local, jp);
+    cB.get()[jp_local] = c[q];
+    B_tilde[jp_local] = q;
+    N_tilde[q_local] = jp;
+
+#ifdef EXPLICIT_INVERSE
+    // This is a rank-1 update to B, can use Sherman-Morrison formula to update
+    // See:
+    //     https://www.maths.ed.ac.uk/hall/RealSimplex/25_01_07_talk1.pdf
+    //     http://www-personal.umich.edu/~mepelman/teaching/IOE610/Handouts/610SimpexIIIF13.pdf
+    // B = B + (Aq - Ajp) @ epj.T
+    // where epj is an m-vector with one at its pth element and zero everywhere
+    // else. [thing]_ptr refers to either memory allocated using
+    // std::make_unique or in WORK (depending on if WORK was large enough to
+    // hold it).
+    sherman_morrison_update(m, n, A, Binv, q, jp, jp_local, u_ptr, ejp_ptr,
+                            qq_ptr, r_ptr);
+#endif
+
+    // And that's an iteration
+    ++res.nit;
+  }
+
+  // Should never get here...
+  return res;
+}
