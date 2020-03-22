@@ -1,3 +1,8 @@
+# Build with support for EXPLICIT_INVERSE or (if not defined) LU
+# factorization each iteration.
+#
+# DEBUG flag prints out intermediate variables for inspection.
+
 from distutils.core import setup
 from distutils.extension import Extension
 from Cython.Build import cythonize
