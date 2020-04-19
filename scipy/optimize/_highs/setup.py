@@ -9,6 +9,11 @@ def pre_build_hook(build_ext, ext):
     if std_flag is not None:
         ext.extra_compile_args.append(std_flag)
 
+def clib_pre_build_hook(cmd, ext):
+    print('I AM IN THE CLIB PRE_BUILD_HOOK')
+    with open('mybuild.log', 'w') as fp:
+        fp.write('LOGGING FROM CLIB PRE_BUILD_HOOK')
+
 def _get_sources(CMakeLists, start_token, end_token):
     # Read in sources from CMakeLists.txt
     CMakeLists = pathlib.Path(__file__).parent / CMakeLists
@@ -84,6 +89,7 @@ def configuration(parent_package='', top_path=None):
         ],
         language='c',
         macros=DEFINE_MACROS,
+        _pre_build_hook=clib_pre_build_hook,
     )
 
     # highs_wrapper:
