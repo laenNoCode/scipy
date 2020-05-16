@@ -4,11 +4,28 @@ from distutils.spawn import find_executable
 import subprocess
 import pathlib
 from warnings import warn
+import tempfile
 
 from scipy.optimize import OptimizeWarning
 
+def _linprog_glpsol(c, A_ub, b_ub, A_eq, b_eq, bounds, options):
+
+    with tempfile.NamedTemporaryFile as infile, tempfile.NamedTemporaryFile as outfile:
+        # Step 1: Create MPS file
+
+        # Step 2: Pass MPS file to GLPSOL
+        _glpsol_interface(
+            infile,
+            outfile,
+            fmt='freemps',
+            **options,
+        )
+
+        # Step 3: Read solution back into OptimizeResult
+
 def _glpsol_interface(
         infile,
+        outfile,
         fmt='freemps',
         display=False,
         seed=None,
@@ -16,6 +33,7 @@ def _glpsol_interface(
         flow=None,
         sense='min',
         scale=True,
+        printable=False,
         ranges=None,
         tmlim=None,
         memlim=None,
@@ -30,6 +48,8 @@ def _glpsol_interface(
     ----------
     infile : str
         File that holds the LP/MIP model.
+    outfile : str
+        File to write the solution to.
     fmt : { 'mps', 'freemps', 'lp', 'glp', 'math' }
         Format of the LP/MIP model, ``infile``.
         Default is ``freemps``.
@@ -51,6 +71,10 @@ def _glpsol_interface(
         Default is ``min``.
     scale : bool
         Scale the problem. Default is ``True``.
+    printable : bool
+        If ``True``, solution will be written to ``outfile`` in
+        printable format. If ``False``, solution will be written
+        in plain text. Default is ``False``.
     ranges : str
         Write sensitivity analysis report to file ``ranges`` in
         printable format (simplex only).
@@ -193,6 +217,14 @@ def _glpsol_interface(
     infile = str(pathlib.Path(infile).expanduser().resolve())
     args.append('--' + fmt)
     args.append(infile)
+
+    # Tell where to write the solution (should we get one)
+    outfile = str(pathlib.Path(outfile).expanduser().resolve())
+    if printable:
+        args.append('--output')
+    else:
+        args.append('--write')
+    args.append(outfile)
 
     # Seed is an int or '?'
     if seed is not None:
