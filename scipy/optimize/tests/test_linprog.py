@@ -24,6 +24,12 @@ try:
 except ImportError:
     has_cholmod = False
 
+has_sckikit_glpk = True
+try:
+    from glpk import glpk
+except ImportError:
+    has_sckikit_glpk = False
+
 
 def _assert_iteration_limit_reached(res, maxiter):
     assert_(not res.success, "Incorrectly reported success")
@@ -1491,6 +1497,14 @@ class LinprogRSTests(LinprogCommonTests):
     def test_network_flow(self):
         pytest.skip("Intermittent failure acceptable.")
 
+
+class ScikitGLPKTests(LinprogCommonTests):
+    method = 'glpk'
+
+    def test_callback(self):
+        pytest.skip("Crashes.")
+
+
 ################################
 # Simplex Option-Specific Tests#
 ################################
@@ -1817,6 +1831,10 @@ class TestLinprogRSBland(LinprogRSTests):
     options = {"pivot": "bland"}
 
 
+class TestGLPKSpecificTests(ScikitGLPKTests):
+    options = {}
+
+
 ###########################
 # Autoscale-Specific Tests#
 ###########################
@@ -1858,3 +1876,7 @@ class TestAutoscaleRS(AutoscaleTests):
         res = linprog(c, A_ub, b_ub, A_eq, b_eq, bounds,
                       method=self.method, options=self.options, x0=bad_guess)
         assert_equal(res.status, 6)
+
+
+class TestAutoScaleGLPK(AutoscaleTests):
+    method = 'glpk'

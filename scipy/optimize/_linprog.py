@@ -27,6 +27,12 @@ from ._linprog_util import (
     _postsolve, _check_result, _display_summary)
 from copy import deepcopy
 
+has_glpk = True
+try:
+    from glpk import glpk
+except ImportError:
+    has_glpk = False
+
 __all__ = ['linprog', 'linprog_verbose_callback', 'linprog_terse_callback']
 
 __docformat__ = "restructuredtext en"
@@ -515,6 +521,12 @@ def linprog(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
     lp = _LPProblem(c, A_ub, b_ub, A_eq, b_eq, bounds, x0)
     lp, solver_options = _parse_linprog(lp, options)
     tol = solver_options.get('tol', 1e-9)
+
+    if meth == 'glpk':
+        if has_glpk:
+            print(linprog(c, A_ub=lp.A_ub, b_ub=lp.b_ub, A_eq=lp.A_eq, b_eq=lp.b_eq, bounds=lp.bounds))
+            return glpk(c, A_ub=lp.A_ub, b_ub=lp.b_ub, A_eq=lp.A_eq, b_eq=lp.b_eq, bounds=lp.bounds, solver='simplex')
+        raise ValueError('glpk is not installed!')
 
     iteration = 0
     complete = False  # will become True if solved in presolve
