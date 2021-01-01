@@ -3,7 +3,6 @@
 from .biasedurn cimport CFishersNCHypergeometric, StochasticLib3
 import numpy as np
 from numpy.random cimport bitgen_t
-# from numpy.random.mtrand cimport RandomState
 from cpython.pycapsule cimport PyCapsule_GetPointer, PyCapsule_IsValid
 
 cdef class _PyFishersNCHypergeometric:

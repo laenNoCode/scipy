@@ -1,5 +1,4 @@
 from os.path import join
-import pathlib
 
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration
@@ -30,7 +29,6 @@ def configuration(parent_package='',top_path=None):
     )
 
     # add BiasedUrn module
-    np_rndlib = str((pathlib.Path(np.get_include()) / '../../random/lib').resolve())
     config.add_extension(
         'biasedurn',
         sources=[
@@ -39,17 +37,9 @@ def configuration(parent_package='',top_path=None):
             'biasedurn/fnchyppr.cpp',
             'biasedurn/wnchyppr.cpp',
             'biasedurn/stoc1.cpp',
-            'biasedurn/stoc3.cpp',
-        ],
-        include_dirs=[
-            str((pathlib.Path(np.get_include()) / '../..').resolve()),
-            np.get_include(),
-        ],
-        library_dirs=[np_rndlib],
-        libraries=['npyrandom'],
-        define_macros=[
-            ('R_BUILD', None),
-        ],
+            'biasedurn/stoc3.cpp'],
+        include_dirs=[np.get_include()],
+        define_macros=[('R_BUILD', None)],
         language='c++',
     )
 
