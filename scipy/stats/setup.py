@@ -1,8 +1,9 @@
 from os.path import join
-
+import pathlib
 
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration
+    import numpy as np
     config = Configuration('stats', parent_package, top_path)
 
     config.add_data_dir('tests')
@@ -26,6 +27,30 @@ def configuration(parent_package='',top_path=None):
     # add mvn module
     config.add_extension('mvn',
         sources=['mvn.pyf','mvndst.f'],
+    )
+
+    # add BiasedUrn module
+    np_rndlib = str((pathlib.Path(np.get_include()) / '../../random/lib').resolve())
+    config.add_extension(
+        'biasedurn',
+        sources=[
+            'biasedurn.cxx',
+            'biasedurn/fatalerror.cpp',
+            'biasedurn/fnchyppr.cpp',
+            'biasedurn/wnchyppr.cpp',
+            'biasedurn/stoc1.cpp',
+            'biasedurn/stoc3.cpp',
+        ],
+        include_dirs=[
+            str((pathlib.Path(np.get_include()) / '../..').resolve()),
+            np.get_include(),
+        ],
+        library_dirs=[np_rndlib],
+        libraries=['npyrandom'],
+        define_macros=[
+            ('R_BUILD', None),
+        ],
+        language='c++',
     )
 
     return config
