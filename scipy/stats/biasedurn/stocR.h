@@ -20,14 +20,12 @@ public:
     bitgen_state = that_bitgen_state;
   }
   
-  void InitRan() {
+  void RandomInit() {
     // we can only generate random numbers if we have bitgen_t object
     if (bitgen_state == NULL) {
       throw std::runtime_error("SetBitGen(bitgen_state) has not been called!");
     }
   }
-
-  void EndRan() {}
 
   double Random() {
     return bitgen_state->next_double(bitgen_state->state);
