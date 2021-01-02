@@ -29,11 +29,12 @@ def configuration(parent_package='',top_path=None):
     )
 
     # add BiasedUrn module
+    config.add_data_files('biasedurn.pxd')
     config.add_extension(
         'biasedurn',
         sources=[
             'biasedurn.cxx',
-            'biasedurn/fatalerror.cpp',
+            'biasedurn/impls.cpp',
             'biasedurn/fnchyppr.cpp',
             'biasedurn/wnchyppr.cpp',
             'biasedurn/stoc1.cpp',

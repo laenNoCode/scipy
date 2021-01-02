@@ -391,6 +391,7 @@ class StochasticLib3 : public StochasticLib1 {
    // This class can be derived from either StochasticLib1 or StochasticLib2.
    // Adds more probability distributions
 public:
+   StochasticLib3() : StochasticLib1(0) {} // mckib2: add default constructor
    StochasticLib3(int seed);           // Constructor
    void SetAccuracy(double accur);     // Define accuracy of calculations
    int32_t WalleniusNCHyp (int32_t n, int32_t m, int32_t N, double odds); // Wallenius noncentral hypergeometric distribution
@@ -556,6 +557,7 @@ class CFishersNCHypergeometric {
    // This class contains methods for calculating the univariate Fisher's
    // noncentral hypergeometric probability function
 public:
+   CFishersNCHypergeometric() {} // mckib2: add default constructor
    CFishersNCHypergeometric(int32_t n, int32_t m, int32_t N, double odds, double accuracy = 1E-8); // constructor
    double probability(int32_t x);                          // calculate probability function
    double probabilityRatio(int32_t x, int32_t x0);         // calculate probability f(x)/f(x0)

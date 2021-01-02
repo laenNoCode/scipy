@@ -20,7 +20,6 @@ public:
     bitgen_state = that_bitgen_state;
   }
   
-  // Call this before first random number
   void InitRan() {
     // we can only generate random numbers if we have bitgen_t object
     if (bitgen_state == NULL) {
@@ -28,26 +27,11 @@ public:
     }
   }
 
-  // Call this after last random number
   void EndRan() {}
 
-  // output random float number in the interval 0 <= x < 1
   double Random() {
     return bitgen_state->next_double(bitgen_state->state);
   }
-
-  // normal distribution
-  double Normal(double m, double s) {
-    printf("I don't have a normal generator!");
-    return 0;
-  }
-
-  std::int32_t Hypergeometric(std::int32_t n, std::int32_t m, std::int32_t N);
-  
-protected:
-  std::int32_t HypInversionMod (std::int32_t n, std::int32_t M, std::int32_t N);
-  std::int32_t HypRatioOfUnifoms (std::int32_t n, std::int32_t M, std::int32_t N);
-  static double fc_lnpk(std::int32_t k, std::int32_t N_Mn, std::int32_t M, std::int32_t n);
 };
 
 #endif // _STOCR_H_
