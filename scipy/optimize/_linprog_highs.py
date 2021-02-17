@@ -199,19 +199,24 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
                 crossover routine for ``solver='ipm'``.  This is ``0``
                 for ``solver='simplex'``.
             sensitivity : dict
+                The sensitivity (partial derivative) of the objective function
+                with respect to the right-hand side of each constraint.
                 A dictionary consisting of the fields:
 
-                    - ``ineqlin``, ``eqlin`` : np.ndarray
-                        Lagrangian multipliers associated with the inequality
-                        (``ineqlin``) and equality (``eqlin``) constraints,
-                        ``b_ub`` and ``b_eq``, respectively.
+                ineqlin : np.ndarray
+                    The sensitivity with respect to the right-hand side
+                    of the inequality constraints, `b_ub`.
 
-                    - ``upper``, ``lower`` : np.ndarray
-                        Lagrangian multipliers associated with the ``upper``
-                        and ``lower`` bound constraints.
+                eqlin : np.ndarray
+                    The sensitivity with respect to the right-hand side
+                    of the equality constraints, `b_eq`.
 
-                The Lagrangian values are also often referred to as the "dual
-                values" or "shadow prices".
+                lower, upper : np.ndarray
+                    The sensitivity with respect to the lower and upper
+                    `bounds`.
+
+                These partial derivatives are also referred to as
+                "Lagrange multipliers", "dual values", and "shadow prices".
 
     References
     ----------
