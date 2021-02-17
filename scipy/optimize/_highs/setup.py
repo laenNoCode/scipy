@@ -134,11 +134,11 @@ def configuration(parent_package='', top_path=None):
 
     # wrapper around HiGHS writeMPS:
     ext = config.add_extension(
-        '_mpswriter',
+        '_highs_mpswriter',
         sources=[
             # we should be using using highs shared library;
             # next best thing is compiling minimal set of sources
-            'cython/src/_mpswriter.cxx',
+            'cython/src/_highs_mpswriter.cxx',
             'src/util/HighsUtils.cpp',
             'src/io/HighsIO.cpp',
             'src/io/HMPSIO.cpp',
