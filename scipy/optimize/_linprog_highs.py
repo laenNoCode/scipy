@@ -198,6 +198,20 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
                 The number of primal/dual pushes performed during the
                 crossover routine for ``solver='ipm'``.  This is ``0``
                 for ``solver='simplex'``.
+            sensitivity : dict
+                A dictionary consisting of the fields:
+
+                    - ``ineqlin``, ``eqlin`` : np.ndarray
+                        Lagrangian multipliers associated with the inequality
+                        (``ineqlin``) and equality (``eqlin``) constraints,
+                        ``b_ub`` and ``b_eq``, respectively.
+
+                    - ``upper``, ``lower`` : np.ndarray
+                        Lagrangian multipliers associated with the ``upper``
+                        and ``lower`` bound constraints.
+
+                The Lagrangian values are also often referred to as the "dual
+                values" or "shadow prices".
 
     References
     ----------
