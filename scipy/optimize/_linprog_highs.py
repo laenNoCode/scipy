@@ -215,7 +215,8 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
         'simplex_dual_edge_weight_strategy',
         choices={'dantzig': HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_DANTZIG,
                  'devex': HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_DEVEX,
-                 'steepest-devex': HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_CHOOSE,
+                 'steepest-devex':
+                 HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_CHOOSE,
                  'steepest':
                  HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_STEEPEST_EDGE,
                  None: None})

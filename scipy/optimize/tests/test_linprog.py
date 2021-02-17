@@ -1651,27 +1651,25 @@ class LinprogHiGHSTests(LinprogCommonTests):
                    'b_eq': b_eq,
                    'lb': bounds[:, 0],
                    'ub': bounds[:, 1]}
-        def _central_diff(prop: str, h: float = 1e-5) -> np.ndarray:
-            res = np.empty_like(_kwargs[prop])
+
+        def _forward_diff(prop: str, h: float = 1e-5) -> np.ndarray:
+            fres = np.empty_like(_kwargs[prop])
             for ii in range(len(_kwargs[prop])):
                 hi = _kwargs[prop].copy()
-                lo = _kwargs[prop].copy()
                 hi[ii] += h
-                lo[ii] -= h
-                hi_kwargs = {k: (v if k != prop else hi) for k, v in _kwargs.items()}
-                lo_kwargs = {k: (v if k != prop else lo) for k, v in _kwargs.items()}
-                hi_kwargs['bounds'] = np.vstack((hi_kwargs['lb'], hi_kwargs['ub'])).T
-                lo_kwargs['bounds'] = np.vstack((lo_kwargs['lb'], lo_kwargs['ub'])).T
-                del hi_kwargs['lb'], hi_kwargs['ub'], lo_kwargs['lb'], lo_kwargs['ub']
-                res_hi = linprog(c, A_ub=A_ub, A_eq=A_eq, **hi_kwargs, method=self.method)
-                res_lo = linprog(c, A_ub=A_ub, A_eq=A_eq, **lo_kwargs, method=self.method)
-                res[ii] = (res_hi.fun - res_lo.fun)/(2*h)
-            return res
+                kwargs = {k: (v if k != prop else hi)
+                          for k, v in _kwargs.items()}
+                res_hi = linprog(c, A_ub=A_ub, A_eq=A_eq, method=self.method,
+                                 b_ub=kwargs['b_ub'], b_eq=kwargs['b_eq'],
+                                 bounds=np.vstack((kwargs['lb'],
+                                                   kwargs['ub'])).T)
+                fres[ii] = (res_hi.fun - res.fun)/h
+            return fres
 
-        assert_allclose(_central_diff('b_ub'), res.sensitivity.ineqlin)
-        assert_allclose(_central_diff('b_eq'), res.sensitivity.eqlin)
-        assert_allclose(_central_diff('lb'), res.sensitivity.lower)
-        assert_allclose(_central_diff('ub'), res.sensitivity.upper)
+        assert_allclose(_forward_diff('b_ub'), res.sensitivity.ineqlin)
+        assert_allclose(_forward_diff('b_eq'), res.sensitivity.eqlin)
+        assert_allclose(_forward_diff('lb'), res.sensitivity.lower)
+        assert_allclose(_forward_diff('ub'), res.sensitivity.upper)
 
 ################################
 # Simplex Option-Specific Tests#
