@@ -57,6 +57,7 @@ from .HighsOptions cimport (
     OptionRecordDouble,
     OptionRecordString,
 )
+from .HighsRanging cimport HighsRanging
 
 # options to reference for default values and bounds;
 # make a map to quickly lookup
@@ -653,6 +654,7 @@ def _highs_wrapper(
 
     # We might need an info object if we can look up the solution and a place to put solution
     cdef HighsInfo info = highs.getHighsInfo() # it should always be safe to get the info object
+    cdef HighsRanging highsRanging
     cdef HighsSolution solution
     cdef HighsBasis basis
 
@@ -663,13 +665,53 @@ def _highs_wrapper(
             'message': highs.highsModelStatusToString(model_status).decode(),
             'simplex_nit': info.simplex_iteration_count,
             'ipm_nit': info.ipm_iteration_count,
-            #'fun': info.objective_function_value,
             'fun': None,
             'crossover_nit': info.crossover_iteration_count,
         }
     # If the model status is such that the solution can be read
     else:
         # Should be safe to read the solution:
+        if highs.getRanging(highsRanging) == HighsStatusOK:
+            ranging = {
+                'col_cost_up' : {
+                    'val': [highsRanging.col_cost_up.value_[ii] for ii in range(highsRanging.col_cost_up.value_.size())],
+                    'obj': [highsRanging.col_cost_up.objective_[ii] for ii in range(highsRanging.col_cost_up.objective_.size())],
+                    'in_var': [highsRanging.col_cost_up.in_var_[ii] for ii in range(highsRanging.col_cost_up.in_var_.size())],
+                    'out_var': [highsRanging.col_cost_up.ou_var_[ii] for ii in range(highsRanging.col_cost_up.ou_var_.size())],
+                },
+                'col_cost_dn': {
+                    'val': [highsRanging.col_cost_dn.value_[ii] for ii in range(highsRanging.col_cost_dn.value_.size())],
+                    'obj': [highsRanging.col_cost_dn.objective_[ii] for ii in range(highsRanging.col_cost_dn.objective_.size())],
+                    'in_var': [highsRanging.col_cost_dn.in_var_[ii] for ii in range(highsRanging.col_cost_dn.in_var_.size())],
+                    'out_var': [highsRanging.col_cost_dn.ou_var_[ii] for ii in range(highsRanging.col_cost_dn.ou_var_.size())],
+                },
+                'col_bnd_up': {
+                    'val': [highsRanging.col_bound_up.value_[ii] for ii in range(highsRanging.col_bound_up.value_.size())],
+                    'obj': [highsRanging.col_bound_up.objective_[ii] for ii in range(highsRanging.col_bound_up.objective_.size())],
+                    'in_var': [highsRanging.col_bound_up.in_var_[ii] for ii in range(highsRanging.col_bound_up.in_var_.size())],
+                    'out_var': [highsRanging.col_bound_up.ou_var_[ii] for ii in range(highsRanging.col_bound_up.ou_var_.size())],
+                },
+                'col_bnd_dn': {
+                    'val': [highsRanging.col_bound_dn.value_[ii] for ii in range(highsRanging.col_bound_dn.value_.size())],
+                    'obj': [highsRanging.col_bound_dn.objective_[ii] for ii in range(highsRanging.col_bound_dn.objective_.size())],
+                    'in_var': [highsRanging.col_bound_dn.in_var_[ii] for ii in range(highsRanging.col_bound_dn.in_var_.size())],
+                    'out_var': [highsRanging.col_bound_dn.ou_var_[ii] for ii in range(highsRanging.col_bound_dn.ou_var_.size())],
+                },
+                'row_bnd_up': {
+                    'val': [highsRanging.row_bound_up.value_[ii] for ii in range(highsRanging.row_bound_up.value_.size())],
+                    'obj': [highsRanging.row_bound_up.objective_[ii] for ii in range(highsRanging.row_bound_up.objective_.size())],
+                    'in_var': [highsRanging.row_bound_up.in_var_[ii] for ii in range(highsRanging.row_bound_up.in_var_.size())],
+                    'out_var': [highsRanging.row_bound_up.ou_var_[ii] for ii in range(highsRanging.row_bound_up.ou_var_.size())],
+                },
+                'row_bnd_dn': {
+                    'val': [highsRanging.row_bound_dn.value_[ii] for ii in range(highsRanging.row_bound_dn.value_.size())],
+                    'obj': [highsRanging.row_bound_dn.objective_[ii] for ii in range(highsRanging.row_bound_dn.objective_.size())],
+                    'in_var': [highsRanging.row_bound_dn.in_var_[ii] for ii in range(highsRanging.row_bound_dn.in_var_.size())],
+                    'out_var': [highsRanging.row_bound_dn.ou_var_[ii] for ii in range(highsRanging.row_bound_dn.ou_var_.size())],
+                },
+            },
+        else:
+            ranging = None
         solution = highs.getSolution()
         basis = highs.getBasis()
         return {
@@ -693,6 +735,8 @@ def _highs_wrapper(
 
             # s are the lagrange multipliers associated with bound conditions
             's': [solution.col_dual[ii] for ii in range(numcol)],
+
+            'ranging': ranging,
 
             'fun': info.objective_function_value,
             'simplex_nit': info.simplex_iteration_count,

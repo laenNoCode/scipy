@@ -1655,7 +1655,7 @@ class LinprogHiGHSTests(LinprogCommonTests):
                            method=self.method).fun
 
         dfdbub = approx_derivative(f_bub, b_ub, method='3-point', f0=res.fun)
-        assert_allclose(res.sensitivity.ineqlin, dfdbub)
+        assert_allclose(res.marginals.ineqlin, dfdbub)
 
         # sensitivity w.r.t. b_eq
         def f_beq(x):
@@ -1663,7 +1663,7 @@ class LinprogHiGHSTests(LinprogCommonTests):
                            method=self.method).fun
 
         dfdbeq = approx_derivative(f_beq, b_eq, method='3-point', f0=res.fun)
-        assert_allclose(res.sensitivity.eqlin, dfdbeq)
+        assert_allclose(res.marginals.eqlin, dfdbeq)
 
         # sensitivity w.r.t. lb
         def f_lb(x):
@@ -1676,7 +1676,7 @@ class LinprogHiGHSTests(LinprogCommonTests):
             dfdlb = approx_derivative(f_lb, lb, method='3-point', f0=res.fun)
             dfdlb[~np.isfinite(lb)] = 0
 
-        assert_allclose(res.sensitivity.lower, dfdlb)
+        assert_allclose(res.marginals.lower, dfdlb)
 
         # sensitivity w.r.t. ub
         def f_ub(x):
@@ -1688,7 +1688,7 @@ class LinprogHiGHSTests(LinprogCommonTests):
             dfdub = approx_derivative(f_ub, ub, method='3-point', f0=res.fun)
             dfdub[~np.isfinite(ub)] = 0
 
-        assert_allclose(res.sensitivity.upper, dfdub)
+        assert_allclose(res.marginals.upper, dfdub)
 
     def test_complementary_slackness(self):
         '''
@@ -1698,13 +1698,19 @@ class LinprogHiGHSTests(LinprogCommonTests):
         res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
                       bounds=bounds, method=self.method, options=self.options)
 
-        resid = (-c + A_ub.T @ res.sensitivity.ineqlin +
-                 A_eq.T @ res.sensitivity.eqlin +
-                 res.sensitivity.upper +
-                 res.sensitivity.lower)
+        resid = (-c + A_ub.T @ res.marginals.ineqlin +
+                 A_eq.T @ res.marginals.eqlin +
+                 res.marginals.upper +
+                 res.marginals.lower)
         # assert_allclose has trouble at 0, so add 1
         assert_allclose(resid + 1, 1)
 
+    def test_ranging(self):
+        c, A_ub, b_ub, A_eq, b_eq, bounds = very_random_gen(seed=0)
+        res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+                      bounds=bounds, method=self.method, options=self.options)
+        print(res)
+        assert False
 
 ################################
 # Simplex Option-Specific Tests#
