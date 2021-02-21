@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -1110,25 +1110,25 @@ void HDual::iterateTasks() {
   if (1.0 * row_ep.count / solver_num_row < 0.01) slice_PRICE = 0;
 
   analysis->simplexTimerStart(Group1Clock);
-//#pragma omp parallel
-//#pragma omp single
+#pragma omp parallel
+#pragma omp single
   {
-//#pragma omp task
+#pragma omp task
     {
       col_DSE.copy(&row_ep);
       updateFtranDSE(&col_DSE);
     }
-//#pragma omp task
+#pragma omp task
     {
       if (slice_PRICE)
         chooseColumnSlice(&row_ep);
       else
         chooseColumn(&row_ep);
-//#pragma omp task
+#pragma omp task
       updateFtranBFRT();
-//#pragma omp task
+#pragma omp task
       updateFtran();
-//#pragma omp taskwait
+#pragma omp taskwait
     }
   }
   analysis->simplexTimerStop(Group1Clock);
@@ -1468,7 +1468,7 @@ void HDual::chooseColumnSlice(HVector* row_ep) {
   row_ap_thread_id.resize(slice_num);
   */
 
-//#pragma omp task
+#pragma omp task
   {
     dualRow.chooseMakepack(row_ep, solver_num_col);
     dualRow.choosePossible();
@@ -1481,7 +1481,7 @@ void HDual::chooseColumnSlice(HVector* row_ep) {
 
   // Row_ap: PRICE + PACK + CC1
   for (int i = 0; i < slice_num; i++) {
-//#pragma omp task
+#pragma omp task
     {
 #ifdef OPENMP
       //      int row_ap_thread_id = omp_get_thread_num();
@@ -1512,7 +1512,7 @@ void HDual::chooseColumnSlice(HVector* row_ep) {
       slice_dualRow[i].choosePossible();
     }
   }
-//#pragma omp taskwait
+#pragma omp taskwait
 
 #ifdef HiGHSDEV
   // Determine the nonzero count of the whole row
@@ -1539,9 +1539,13 @@ void HDual::chooseColumnSlice(HVector* row_ep) {
   }
 
   // Choose column 2, This only happens if didn't go out
-  bool chooseColumnFail = dualRow.chooseFinal();
-  if (chooseColumnFail) {
-    invertHint = INVERT_HINT_CHOOSE_COLUMN_FAIL;
+  int return_code = dualRow.chooseFinal();
+  if (return_code) {
+    if (return_code < 0) {
+      invertHint = INVERT_HINT_CHOOSE_COLUMN_FAIL;
+    } else {
+      invertHint = INVERT_HINT_POSSIBLY_DUAL_UNBOUNDED;
+    }
     return;
   }
 

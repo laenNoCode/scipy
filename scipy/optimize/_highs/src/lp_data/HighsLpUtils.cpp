@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -1474,7 +1474,7 @@ int getNumInt(const HighsLp& lp) {
   int num_int = 0;
   if (lp.integrality_.size()) {
     for (int iCol = 0; iCol < lp.numCol_; iCol++)
-      if (lp.integrality_[iCol]) num_int++;
+      if (lp.integrality_[iCol] == HighsVarType::INTEGER) num_int++;
   }
   return num_int;
 }
@@ -1635,7 +1635,7 @@ void reportLpColVectors(const HighsOptions& options, const HighsLp& lp) {
                       type.c_str(), count);
     if (have_integer_columns) {
       std::string integer_column = "";
-      if (lp.integrality_[iCol]) {
+      if (lp.integrality_[iCol] == HighsVarType::INTEGER) {
         if (lp.colLower_[iCol] == 0 && lp.colUpper_[iCol] == 1) {
           integer_column = "Binary";
         } else {
@@ -1901,7 +1901,7 @@ HighsStatus calculateColDuals(const HighsLp& lp, HighsSolution& solution) {
 
 HighsStatus calculateRowValues(const HighsLp& lp, HighsSolution& solution) {
   assert(solution.col_value.size() > 0);
-  if (!isSolutionRightSize(lp, solution)) return HighsStatus::Error;
+  if (int(solution.col_value.size()) != lp.numCol_) return HighsStatus::Error;
 
   solution.row_value.clear();
   solution.row_value.assign(lp.numRow_, 0);
@@ -2183,12 +2183,18 @@ void reportPresolveReductions(const HighsOptions& options, const HighsLp& lp,
   } else {
     num_els_to = 0;
   }
+  char elemsignchar = '-';
+  int elemdelta = num_els_from - num_els_to;
+  if (num_els_from < num_els_to) {
+    elemdelta = -elemdelta;
+    elemsignchar = '+';
+  }
   HighsPrintMessage(options.logfile, options.message_level, ML_ALWAYS,
                     "Presolve : Reductions: rows %d(-%d); columns %d(-%d); "
-                    "elements %d(-%d)\n",
+                    "elements %d(%c%d)\n",
                     num_row_to, (num_row_from - num_row_to), num_col_to,
-                    (num_col_from - num_col_to), num_els_to,
-                    (num_els_from - num_els_to));
+                    (num_col_from - num_col_to), num_els_to, elemsignchar,
+                    elemdelta);
 }
 
 void reportPresolveReductions(const HighsOptions& options, const HighsLp& lp,

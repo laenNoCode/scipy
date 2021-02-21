@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -43,8 +43,8 @@ void HDual::iterateMulti() {
     slice_PRICE = 0;
 
   if (slice_PRICE) {
-//#pragma omp parallel
-//#pragma omp single
+#pragma omp parallel
+#pragma omp single
     chooseColumnSlice(multi_finish[multi_nFinish].row_ep);
   } else {
     chooseColumn(multi_finish[multi_nFinish].row_ep);
@@ -195,7 +195,7 @@ void HDual::majorChooseRowBtran() {
                                     analysis->row_ep_density);
 #endif
     // 4.2 Perform BTRAN
-//#pragma omp parallel for schedule(static, 1)
+#pragma omp parallel for schedule(static, 1)
   for (int i = 0; i < multi_ntasks; i++) {
     const int iRow = multi_iRow[i];
     HVector_ptr work_ep = multi_vector[i];
@@ -470,7 +470,7 @@ void HDual::minorUpdateRows() {
     }
 
     // Perform tasks
-//#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < multi_nTasks; i++) {
       HVector_ptr nextEp = multi_vector[i];
       const double xpivot = multi_xpivot[i];
@@ -632,7 +632,7 @@ void HDual::majorUpdateFtranParallel() {
   }
 
   // Perform FTRAN
-//#pragma omp parallel for schedule(dynamic, 1)
+#pragma omp parallel for schedule(dynamic, 1)
   for (int i = 0; i < multi_ntasks; i++) {
     HVector_ptr rhs = multi_vector[i];
     double density = multi_density[i];
@@ -697,7 +697,7 @@ void HDual::majorUpdateFtranFinal() {
         // The FTRAN regular buffer
         if (fabs(pivotX1) > HIGHS_CONST_TINY) {
           const double pivot = pivotX1 / pivotAlpha;
-//#pragma omp parallel for
+#pragma omp parallel for
           for (int i = 0; i < solver_num_row; i++)
             myCol[i] -= pivot * pivotArray[i];
           myCol[pivotRow] = pivot;
@@ -705,7 +705,7 @@ void HDual::majorUpdateFtranFinal() {
         // The FTRAN-DSE buffer
         if (fabs(pivotX2) > HIGHS_CONST_TINY) {
           const double pivot = pivotX2 / pivotAlpha;
-//#pragma omp parallel for
+#pragma omp parallel for
           for (int i = 0; i < solver_num_row; i++)
             myRow[i] -= pivot * pivotArray[i];
           myRow[pivotRow] = pivot;
@@ -747,7 +747,7 @@ void HDual::majorUpdatePrimal() {
     // non-pivotal edge weights
     const double* mixArray = &col_BFRT.array[0];
     double* local_work_infeasibility = &dualRHS.work_infeasibility[0];
-//#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
     for (int iRow = 0; iRow < solver_num_row; iRow++) {
       baseValue[iRow] -= mixArray[iRow];
       const double value = baseValue[iRow];
@@ -774,7 +774,7 @@ void HDual::majorUpdatePrimal() {
           // Update steepest edge weights
           const double* dseArray = &multi_finish[iFn].row_ep->array[0];
           const double Kai = -2 / multi_finish[iFn].alphaRow;
-//#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
           for (int iRow = 0; iRow < solver_num_row; iRow++) {
             const double aa_iRow = colArray[iRow];
             EdWt[iRow] += aa_iRow * (new_pivotal_edge_weight * aa_iRow +

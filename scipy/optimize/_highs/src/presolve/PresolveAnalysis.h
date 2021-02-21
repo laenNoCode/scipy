@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -43,10 +43,12 @@ enum PresolveRule {
   SING_COL_DOUBLETON_INEQ,
   IMPLIED_FREE_SING_COL,
   REMOVE_DOMINATED_COLUMNS,
+  MIP_DUAL_FIXING,
   DOMINATED_COLS,
   WEAKLY_DOMINATED_COLS,
   DOMINATED_COL_BOUNDS,
   EMPTY_COL,
+  AGGREGATOR,
 
   // For timing.
   MATRIX_COPY,

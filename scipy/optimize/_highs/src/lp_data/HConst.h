@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -14,6 +14,7 @@
 #ifndef LP_DATA_HCONST_H_
 #define LP_DATA_HCONST_H_
 
+#include <cstdint>
 #include <limits>
 #include <string>
 
@@ -44,6 +45,12 @@ enum class HighsDebugStatus {
   ERROR,
   EXCESSIVE_ERROR,
   LOGICAL_ERROR,
+};
+
+enum class HighsVarType : uint8_t {
+  CONTINUOUS = 0,
+  IMPLICIT_INTEGER = 1,
+  INTEGER = 2,
 };
 
 enum class HighsOptionType { BOOL = 0, INT, DOUBLE, STRING };

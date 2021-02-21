@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -20,6 +20,13 @@
 
 #include "HConfig.h"
 #include "lp_data/HighsOptions.h"
+
+void highsSparseTranspose(int numRow, int numCol,
+                          const std::vector<int>& Astart,
+                          const std::vector<int>& Aindex,
+                          const std::vector<double>& Avalue,
+                          std::vector<int>& ARstart, std::vector<int>& ARindex,
+                          std::vector<double>& ARvalue);
 
 struct HighsIndexCollection {
   int dimension_ = -1;

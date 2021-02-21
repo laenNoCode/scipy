@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -28,6 +28,34 @@ int getOmpNumThreads() {
   return omp_get_num_threads()
 }
 */
+
+void highsSparseTranspose(int numRow, int numCol,
+                          const std::vector<int>& Astart,
+                          const std::vector<int>& Aindex,
+                          const std::vector<double>& Avalue,
+                          std::vector<int>& ARstart, std::vector<int>& ARindex,
+                          std::vector<double>& ARvalue) {
+  // Make a AR copy
+  std::vector<int> iwork(numRow, 0);
+  ARstart.resize(numRow + 1, 0);
+  int AcountX = Aindex.size();
+  ARindex.resize(AcountX);
+  ARvalue.resize(AcountX);
+  for (int k = 0; k < AcountX; k++) {
+    assert(Aindex[k] < numRow);
+    iwork[Aindex[k]]++;
+  }
+  for (int i = 1; i <= numRow; i++) ARstart[i] = ARstart[i - 1] + iwork[i - 1];
+  for (int i = 0; i < numRow; i++) iwork[i] = ARstart[i];
+  for (int iCol = 0; iCol < numCol; iCol++) {
+    for (int k = Astart[iCol]; k < Astart[iCol + 1]; k++) {
+      int iRow = Aindex[k];
+      int iPut = iwork[iRow]++;
+      ARindex[iPut] = iCol;
+      ARvalue[iPut] = Avalue[k];
+    }
+  }
+}
 
 bool assessIndexCollection(const HighsOptions& options,
                            const HighsIndexCollection& index_collection) {

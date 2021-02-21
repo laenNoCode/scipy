@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -138,6 +138,14 @@ HighsStatus Highs::getHighsOptionValue(const std::string& option,
   return HighsStatus::Error;
 }
 
+HighsStatus Highs::getHighsOptionType(const std::string& option,
+                                      HighsOptionType& type) {
+  if (getOptionType(options_.logfile, option, options_.records, type) ==
+      OptionStatus::OK)
+    return HighsStatus::OK;
+  return HighsStatus::Error;
+}
+
 HighsStatus Highs::resetHighsOptions() {
   resetOptions(options_.records);
   return HighsStatus::OK;
@@ -214,10 +222,10 @@ HighsStatus Highs::reset() {
   return returnFromHighs(return_status);
 }
 
-HighsStatus Highs::passModel(const HighsLp& lp) {
+HighsStatus Highs::passModel(HighsLp lp) {
   HighsStatus return_status = HighsStatus::OK;
-  // Copy the LP to the internal LP
-  lp_ = lp;
+  // move the copy of the LP to the internal LP
+  lp_ = std::move(lp);
   // Check validity of the LP, normalising its values
   return_status =
       interpretCallStatus(assessLp(lp_, options_), return_status, "assessLp");
@@ -264,7 +272,7 @@ HighsStatus Highs::passModel(const int num_col, const int num_row,
   }
   lp.Astart_.resize(num_col + 1);
   lp.Astart_[num_col] = num_nz;
-  return this->passModel(lp);
+  return this->passModel(std::move(lp));
 }
 
 HighsStatus Highs::readModel(const std::string filename) {
@@ -1846,7 +1854,6 @@ HighsPostsolveStatus Highs::runPostsolve() {
                                          presolve_.data_.reduced_solution_);
   if (!solution_ok) return HighsPostsolveStatus::ReducedSolutionDimenionsError;
 
-  // Run postsolve
   if (presolve_.presolve_status_ != HighsPresolveStatus::Reduced &&
       presolve_.presolve_status_ != HighsPresolveStatus::ReducedToEmpty)
     return HighsPostsolveStatus::NoPostsolve;
@@ -1854,6 +1861,7 @@ HighsPostsolveStatus Highs::runPostsolve() {
   // Handle max case.
   if (lp_.sense_ == ObjSense::MAXIMIZE) presolve_.negateReducedLpColDuals(true);
 
+  // Run postsolve
   HighsPostsolveStatus postsolve_status =
       presolve_.data_.presolve_[0].postsolve(
           presolve_.data_.reduced_solution_, presolve_.data_.reduced_basis_,

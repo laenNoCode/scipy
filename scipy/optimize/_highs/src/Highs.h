@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -42,7 +42,7 @@ class Highs {
    * HighsModelObjects (hmos), creates a HighsModelObject for this LP
    * and makes it the first of the vector of HighsModelObjects
    */
-  HighsStatus passModel(const HighsLp& lp  //!< The HighsLp instance for this LP
+  HighsStatus passModel(HighsLp lp  //!< The HighsLp instance for this LP
   );
 
   HighsStatus passModel(const int num_col, const int num_row, const int num_nz,
@@ -149,6 +149,14 @@ class Highs {
   HighsStatus getHighsOptionValue(
       const std::string& option,  //!< The option name
       std::string& value          //!< The option value
+  );
+
+  /**
+   * @brief Get the type expected by an option
+   */
+  HighsStatus getHighsOptionType(
+      const std::string& option,  //!< The option name
+      HighsOptionType& type       //!< The option type
   );
 
   const HighsOptions& getHighsOptions() const;
@@ -308,13 +316,13 @@ class Highs {
    * @brief Get the number of columns in the LP of the (first?)
    * HighsModelObject
    */
-  int getNumCols() { return lp_.numCol_; }
+  int getNumCols() const { return lp_.numCol_; }
 
   /**
    * @brief Get the number of rows in the LP of the (first?)
    * HighsModelObject
    */
-  int getNumRows() { return lp_.numRow_; }
+  int getNumRows() const { return lp_.numRow_; }
 
   /**
    * @brief Get the number of entries in the LP of the (first?)

@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -281,7 +281,7 @@ OptionStatus checkOptionValue(FILE* logfile, OptionRecordString& option,
   // Setting a string option. For some options only particular values
   // are permitted, so check them
   if (option.name == presolve_string) {
-    if (!commandLineOffChooseOnOk(logfile, value))
+    if (!commandLineOffChooseOnOk(logfile, value) && value != "mip")
       return OptionStatus::ILLEGAL_VALUE;
   } else if (option.name == solver_string) {
     if (!commandLineSolverOk(logfile, value))
@@ -586,6 +586,16 @@ OptionStatus getOptionValue(FILE* logfile, const std::string& name,
   }
   OptionRecordString option = ((OptionRecordString*)option_records[index])[0];
   value = *option.value;
+  return OptionStatus::OK;
+}
+
+OptionStatus getOptionType(FILE* logfile, const std::string& name,
+                           const std::vector<OptionRecord*>& option_records,
+                           HighsOptionType& type) {
+  int index;
+  OptionStatus status = getOptionIndex(logfile, name, option_records, index);
+  if (status != OptionStatus::OK) return status;
+  type = option_records[index]->type;
   return OptionStatus::OK;
 }
 

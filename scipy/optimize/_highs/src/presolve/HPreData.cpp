@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -12,6 +12,8 @@
  * @author Julian Hall, Ivet Galabova, Qi Huangfu and Michael Feldmeier
  */
 #include "presolve/HPreData.h"
+
+#include "util/HighsUtils.h"
 
 using std::cout;
 using std::endl;
@@ -49,23 +51,8 @@ bool HPreData::isZeroA(int i, int j) {
 
 void HPreData::makeARCopy() {
   // Make a AR copy
-  vector<int> iwork(numRow, 0);
-  ARstart.resize(numRow + 1, 0);
-  int AcountX = Aindex.size();
-  ARindex.resize(AcountX);
-  ARvalue.resize(AcountX);
-  for (int k = 0; k < AcountX; k++) iwork.at(Aindex.at(k))++;
-  for (int i = 1; i <= numRow; i++)
-    ARstart.at(i) = ARstart.at(i - 1) + iwork.at(i - 1);
-  for (int i = 0; i < numRow; i++) iwork.at(i) = ARstart.at(i);
-  for (int iCol = 0; iCol < numCol; iCol++) {
-    for (int k = Astart.at(iCol); k < Astart.at(iCol + 1); k++) {
-      int iRow = Aindex.at(k);
-      int iPut = iwork.at(iRow)++;
-      ARindex.at(iPut) = iCol;
-      ARvalue.at(iPut) = Avalue[k];
-    }
-  }
+  highsSparseTranspose(numRow, numCol, Astart, Aindex, Avalue, ARstart, ARindex,
+                       ARvalue);
 }
 
 void HPreData::makeACopy() {

@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -168,7 +168,9 @@ HMpsFF::parsekey HMpsFF::checkFirstWord(std::string& strline, int& start,
 
   word = strline.substr(start, end - start);
 
-  if (word == "OBJSENSE")
+  if (word == "NAME") {
+    return HMpsFF::parsekey::NAME;
+  } else if (word == "OBJSENSE")
     return HMpsFF::parsekey::OBJSENSE;
   else if (word.front() == 'M') {
     if (word == "MAX")
@@ -196,13 +198,21 @@ HMpsFF::parsekey HMpsFF::checkFirstWord(std::string& strline, int& start,
     return HMpsFF::parsekey::NONE;
 }
 
-HMpsFF::parsekey HMpsFF::parseDefault(std::ifstream& file) const {
+HMpsFF::parsekey HMpsFF::parseDefault(std::ifstream& file) {
   std::string strline, word;
   if (getline(file, strline)) {
     strline = trim(strline);
     if (strline.empty()) return HMpsFF::parsekey::COMMENT;
     int s, e;
-    return checkFirstWord(strline, s, e, word);
+    HMpsFF::parsekey key = checkFirstWord(strline, s, e, word);
+    if (key == HMpsFF::parsekey::NAME) {
+      // Save name of the MPS file
+      if (e < strline.length()) {
+        mpsName = first_word(strline, e);
+      }
+      return HMpsFF::parsekey::NONE;
+    }
+    return key;
   }
   return HMpsFF::parsekey::FAIL;
 }
@@ -438,7 +448,8 @@ typename HMpsFF::parsekey HMpsFF::parseCols(FILE* logfile,
 
       // Mark the column as integer and binary, according to whether
       // the integral_cols flag is set
-      col_integrality.push_back((int)integral_cols);
+      col_integrality.push_back(integral_cols ? HighsVarType::INTEGER
+                                              : HighsVarType::CONTINUOUS);
       col_binary.push_back(integral_cols);
 
       // initialize with default bounds
@@ -565,6 +576,14 @@ HMpsFF::parsekey HMpsFF::parseRhs(FILE* logfile, std::ifstream& file) {
     // start of new section?
     if (key != parsekey::NONE && key != parsekey::RHS) return key;
 
+    // Ignore lack of name for SIF format;
+    // we know we have this case when "word" is a row name
+    if ((key == parsekey::NONE) &&
+        (key != parsekey::RHS) &&
+        (rowname2idx.find(word) != rowname2idx.end())) {
+      end = begin;
+    }
+
     int rowidx;
 
     std::string marker = first_word(strline, end);
@@ -582,6 +601,27 @@ HMpsFF::parsekey HMpsFF::parseRhs(FILE* logfile, std::ifstream& file) {
     }
 
     auto mit = rowname2idx.find(marker);
+
+    // SIF format sometimes has the name of the MPS file
+    // prepended to the RHS entry; remove it here if
+    // that's the case. "word" will then hold the marker,
+    // so also get new "word" and "end" values
+    if (mit == rowname2idx.end()) {
+      if (marker == mpsName) {
+        marker = word;
+        end_marker = end;
+        word = "";
+        word = first_word(strline, end_marker);
+        end = first_word_end(strline, end_marker);
+        if (word == "") {
+          HighsLogMessage(logfile, HighsMessageType::ERROR,
+                          "No bound given for SIF row %s", marker.c_str());
+          return HMpsFF::parsekey::FAIL;
+        }
+        mit = rowname2idx.find(marker);
+      }
+    }
+
     if (mit == rowname2idx.end()) {
       HighsLogMessage(
           logfile, HighsMessageType::WARNING,
@@ -747,10 +787,22 @@ HMpsFF::parsekey HMpsFF::parseBounds(FILE* logfile, std::ifstream& file) {
       exit(1);
     }
 
-    // The first word is the bound name, which should be ignored.
+    std::string bound_name = first_word(strline, end);
     int end_bound_name = first_word_end(strline, end);
-    std::string marker = first_word(strline, end_bound_name);
-    int end_marker = first_word_end(strline, end_bound_name);
+
+    std::string marker;
+    int end_marker;
+    if (colname2idx.find(bound_name) != colname2idx.end()) {
+      // SIF format might not have the bound name, so skip
+      // it here if we found the marker instead
+      marker = bound_name;
+      end_marker = end_bound_name;
+    }
+    else {
+      // The first word is the bound name, which should be ignored.
+      marker = first_word(strline, end_bound_name);
+      end_marker = first_word_end(strline, end_bound_name);
+    }
 
     auto mit = colname2idx.find(marker);
     if (mit == colname2idx.end()) {
@@ -771,7 +823,7 @@ HMpsFF::parsekey HMpsFF::parseBounds(FILE* logfile, std::ifstream& file) {
       colNames.push_back(colname);
 
       // Mark the column as continuous and non-binary
-      col_integrality.push_back(0);
+      col_integrality.push_back(HighsVarType::CONTINUOUS);
       col_binary.push_back(false);
 
       // initialize with default bounds
@@ -792,7 +844,7 @@ HMpsFF::parsekey HMpsFF::parseBounds(FILE* logfile, std::ifstream& file) {
           return HMpsFF::parsekey::FAIL;
         }
         // Mark the column as integer and binary
-        col_integrality[colidx] = true;
+        col_integrality[colidx] = HighsVarType::INTEGER;
         col_binary[colidx] = true;
       } else {
         // continuous: MI, PL or FR
@@ -822,7 +874,7 @@ HMpsFF::parsekey HMpsFF::parseBounds(FILE* logfile, std::ifstream& file) {
                         "Bound for LI/UI row %s is %g: not integer",
                         marker.c_str(), value);
       // Bound marker LI or UI defines the column as integer
-      col_integrality[colidx] = true;
+      col_integrality[colidx] = HighsVarType::INTEGER;
     }
     // Column is not binary by default
     col_binary[colidx] = false;

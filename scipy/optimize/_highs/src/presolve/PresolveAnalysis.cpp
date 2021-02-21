@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -39,12 +39,14 @@ void initializePresolveRuleInfo(std::vector<PresolveRuleInfo>& rules) {
       PresolveRuleInfo(IMPLIED_FREE_SING_COL, "Impl free sing col", "IFS"));
   rules.push_back(
       PresolveRuleInfo(REMOVE_DOMINATED_COLUMNS, "Rm dom col", "RDC"));
+  rules.push_back(PresolveRuleInfo(MIP_DUAL_FIXING, "Mip dual fix", "MDF"));
   rules.push_back(PresolveRuleInfo(DOMINATED_COLS, "Dominated col", "DMC"));
   rules.push_back(
       PresolveRuleInfo(WEAKLY_DOMINATED_COLS, "Weakly dom col", "WDC"));
   rules.push_back(
       PresolveRuleInfo(DOMINATED_COL_BOUNDS, "Dom col bounds", "DCB"));
   rules.push_back(PresolveRuleInfo(EMPTY_COL, "Empty col", "EMC"));
+  rules.push_back(PresolveRuleInfo(AGGREGATOR, "Aggregator", "AGG"));
   // rules.push_back(PresolveRuleInfo(KNAPSACK, "Knapsack", "KNP"));
   rules.push_back(PresolveRuleInfo(MATRIX_COPY, "Initialize matrix", "INM"));
   rules.push_back(PresolveRuleInfo(RESIZE_MATRIX, "Resize matrix", "RSM"));

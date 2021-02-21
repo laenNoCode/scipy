@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -78,9 +78,10 @@ class HDualRow {
    * @brief Chooses the entering variable via BFRT and EXPAND
    *
    * Can fail when there are excessive dual values due to EXPAND
-   * perturbation not being relatively too small
+   * perturbation not being relatively too small, returns positive if
+   * dual uboundedness is suspected
    */
-  bool chooseFinal();
+  int chooseFinal();
 
   /**
    * @brief Identifies the groups of degenerate nodes in BFRT after a

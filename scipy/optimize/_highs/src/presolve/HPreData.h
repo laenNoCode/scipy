@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -55,6 +55,7 @@ class HPreData {
   vector<double> colUpper;
   vector<double> rowLower;
   vector<double> rowUpper;
+  vector<HighsVarType> integrality;
 
   // during postsolve hold the reduced solution, then at the end of postsolve
   // they hold the recovered. passed to dev kkt checker.
@@ -89,8 +90,6 @@ class HPreData {
   vector<HighsBasisStatus> row_status;
 
   vector<double> colCostAtEl;
-  vector<double> rowLowerAtEl;
-  vector<double> rowUpperAtEl;
 
   void makeARCopy();
   void makeACopy();

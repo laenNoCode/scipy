@@ -2,7 +2,7 @@
 /*                                                                       */
 /*    This file is part of the HiGHS linear optimization suite           */
 /*                                                                       */
-/*    Written and engineered 2008-2020 at the University of Edinburgh    */
+/*    Written and engineered 2008-2021 at the University of Edinburgh    */
 /*                                                                       */
 /*    Available as open-source under the MIT License                     */
 /*                                                                       */
@@ -192,6 +192,10 @@ OptionStatus getOptionValue(FILE* logfile, const std::string& name,
                             const std::vector<OptionRecord*>& option_records,
                             std::string& value);
 
+OptionStatus getOptionType(FILE* logfile, const std::string& name,
+                           const std::vector<OptionRecord*>& option_records,
+                           HighsOptionType& type);
+
 void resetOptions(std::vector<OptionRecord*>& option_records);
 
 HighsStatus writeOptionsToFile(FILE* file,
@@ -212,6 +216,8 @@ void reportOption(FILE* file, const OptionRecordString& option,
 
 const string simplex_string = "simplex";
 const string ipm_string = "ipm";
+const string mip_string = "mip";
+
 const int KEEP_N_ROWS_DELETE_ROWS = -1;
 const int KEEP_N_ROWS_DELETE_ENTRIES = 0;
 const int KEEP_N_ROWS_KEEP_ROWS = 1;
@@ -284,11 +290,14 @@ struct HighsOptionsStruct {
 
   // Options for MIP solver
   int mip_max_nodes;
+  int mip_max_leaves;
   int mip_report_level;
-
-  // Switch for MIP solver
-  bool mip;
-
+  double mip_feasibility_tolerance;
+  double mip_epsilon;
+  double mip_heuristic_effort;
+#ifdef HIGHS_DEBUGSOL
+  std::string mip_debug_solution_file;
+#endif
   // Options for HighsPrintMessage and HighsLogMessage
   FILE* logfile = stdout;
   FILE* output = stdout;
@@ -528,11 +537,37 @@ class HighsOptions : public HighsOptionsStruct {
         "mip_max_nodes", "MIP solver max number of nodes", advanced,
         &mip_max_nodes, 0, HIGHS_CONST_I_INF, HIGHS_CONST_I_INF);
     records.push_back(record_int);
+#ifdef HIGHS_DEBUGSOL
+    record_string = new OptionRecordString(
+        "mip_debug_solution_file",
+        "Solution file for debug solution of the MIP solver", advanced,
+        &mip_debug_solution_file, FILENAME_DEFAULT);
+    records.push_back(record_string);
+#endif
+
+    record_int = new OptionRecordInt(
+        "mip_max_leaves", "MIP solver max number of leave nodes", advanced,
+        &mip_max_leaves, 0, HIGHS_CONST_I_INF, HIGHS_CONST_I_INF);
+    records.push_back(record_int);
 
     record_int =
         new OptionRecordInt("mip_report_level", "MIP solver reporting level",
                             advanced, &mip_report_level, 0, 1, 2);
     records.push_back(record_int);
+
+    record_double = new OptionRecordDouble(
+        "mip_feasibility_tolerance", "MIP feasibility tolerance", advanced,
+        &mip_feasibility_tolerance, 1e-10, 1e-6, HIGHS_CONST_INF);
+
+    record_double =
+        new OptionRecordDouble("mip_epsilon", "MIP epsilon tolerance", advanced,
+                               &mip_epsilon, 1e-15, 1e-9, HIGHS_CONST_INF);
+
+    record_double = new OptionRecordDouble(
+        "mip_heuristic_effort", "effort spent for MIP heuristics", advanced,
+        &mip_heuristic_effort, 0.0, 0.05, 1.0);
+
+    records.push_back(record_double);
 
     // Advanced options
     advanced = true;
@@ -659,10 +694,6 @@ class HighsOptions : public HighsOptionsStruct {
         new OptionRecordBool("less_infeasible_DSE_choose_row",
                              "Use LiDSE if LP has right properties", advanced,
                              &less_infeasible_DSE_choose_row, true);
-    records.push_back(record_bool);
-
-    record_bool =
-        new OptionRecordBool("mip", "Use mip solver.", advanced, &mip, false);
     records.push_back(record_bool);
   }
 
