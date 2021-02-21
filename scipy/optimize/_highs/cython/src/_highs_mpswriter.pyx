@@ -11,6 +11,11 @@ from .HighsLp cimport (
     ObjSense,
     ObjSenseMINIMIZE,
 )
+from .HConst cimport (
+    HighsVarType,
+    HighsVarTypeCONTINUOUS,
+    HighsVarTypeINTEGER,
+)
 
 from scipy.sparse import csc_matrix
 
@@ -21,7 +26,7 @@ cdef extern from "HMPSIO.h" nogil:
                          const vector[double]& Avalue, const vector[double]& colCost,
                          const vector[double]& colLower, const vector[double]& colUpper,
                          const vector[double]& rowLower, const vector[double]& rowUpper,
-                         const vector[int]& integerColumn, const vector[string]& col_names,
+                         const vector[HighsVarType]& integerColumn, const vector[string]& col_names,
                          const vector[string]& row_names, const bool use_free_format)
 
 def mpswriter(
@@ -91,11 +96,14 @@ def mpswriter(
         rowLower.push_back(lhs[ii])
         rowUpper.push_back(rhs[ii])
 
-    cdef vector[int] integerColumn
-    integerColumn.push_back(0)
+    cdef vector[HighsVarType] integerColumn
+    integerColumn.push_back(HighsVarTypeCONTINUOUS)
     integerColumn.clear()
     for ii in range(integer_valued.size):
-        integerColumn.push_back(integer_valued[ii])
+        if integer_valued[ii]:
+            integerColumn.push_back(HighsVarTypeINTEGER)
+        else:
+            integerColumn.push_back(HighsVarTypeCONTINUOUS)
 
     cdef vector[string] row_names
     cdef vector[string] col_names

@@ -14,6 +14,11 @@ cdef extern from "HConst.h" nogil:
     const bool allow_infinite_costs
     const string FILENAME_DEFAULT
 
+    ctypedef enum HighsVarType:
+        HighsVarTypeCONTINUOUS "HighsVarType::CONTINUOUS" = 0
+        HighsVarTypeIMPLICIT_INTEGER "HighsVarType::IMPLICIT_INTEGER"
+        HighsVarTypeINTEGER "HighsVarType::INTEGER"
+
     ctypedef enum HighsModelStatus:
         HighsModelStatusNOTSET "HighsModelStatus::NOTSET" = 0
         HighsModelStatusHIGHS_MODEL_STATUS_MIN "HighsModelStatus::HIGHS_MODEL_STATUS_MIN" = HighsModelStatusNOTSET

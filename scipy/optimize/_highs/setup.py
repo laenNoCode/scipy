@@ -105,6 +105,9 @@ def configuration(parent_package='', top_path=None):
     # highs_wrapper:
     ipx_sources = _get_sources('src/CMakeLists.txt', 'set(ipx_sources\n', ')')
     highs_sources = _get_sources('src/CMakeLists.txt', 'set(sources\n', ')')
+    # filter out MIP sources until MIP is officially supported
+    highs_sources = [s for s in highs_sources
+                     if pathlib.Path(s).parent != 'mip']
     ext = config.add_extension(
         '_highs_wrapper',
         sources=['cython/src/_highs_wrapper.cxx'] + highs_sources + ipx_sources,
