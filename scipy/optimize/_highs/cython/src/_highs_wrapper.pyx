@@ -10,6 +10,7 @@ from libc.stdio cimport stdout
 from libcpp.string cimport string
 from libcpp.memory cimport unique_ptr
 from libcpp.map cimport map as cppmap
+from libcpp cimport bool as cppbool
 
 from .HighsIO cimport (
     ML_NONE,
@@ -246,6 +247,7 @@ def _highs_wrapper(
         double[::1] rhs,
         double[::1] lb,
         double[::1] ub,
+        cppbool ret_ranging,
         dict options):
     '''Solve linear programs using HiGHS [1]_.
 
@@ -276,6 +278,10 @@ def _highs_wrapper(
     ub : 1-D array (or None), (n,)
         Upper bounds on solution variables x.  If ``ub=None``, then an
         array of ``inf`` is assumed.
+    ret_ranging : bool
+        Not a HiGHS option; indicates whether or not to compute
+        and return the ranging sensitivity information for the
+        solved LP.
     options : dict
         A dictionary of solver options with the following fields:
 
@@ -680,45 +686,57 @@ def _highs_wrapper(
     # If the model status is such that the solution can be read
     else:
         # Should be safe to read the solution:
-        if highs.getRanging(highsRanging) == HighsStatusOK:
+        if ret_ranging and (highs.getRanging(highsRanging) == HighsStatusOK):
+            # TODO: separate these to look more similar to marginals categories?
+            # - upper/lower/ineqlin/eqlin
+            # - "costs" probably needs to be its own thing
             ranging = {
-                'col_cost_up' : {
-                    'val': [highsRanging.col_cost_up.value_[ii] for ii in range(highsRanging.col_cost_up.value_.size())],
-                    'obj': [highsRanging.col_cost_up.objective_[ii] for ii in range(highsRanging.col_cost_up.objective_.size())],
-                    'in_var': [highsRanging.col_cost_up.in_var_[ii] for ii in range(highsRanging.col_cost_up.in_var_.size())],
-                    'out_var': [highsRanging.col_cost_up.ou_var_[ii] for ii in range(highsRanging.col_cost_up.ou_var_.size())],
+                # HiGHS col_cost_[up|down]
+                'costs': {
+                    'up': {
+                        'val': [highsRanging.col_cost_up.value_[ii] for ii in range(numcol)],
+                        'obj': [highsRanging.col_cost_up.objective_[ii] for ii in range(numcol)],
+                        'in_var': [highsRanging.col_cost_up.in_var_[ii] for ii in range(numcol)],
+                        'out_var': [highsRanging.col_cost_up.ou_var_[ii] for ii in range(numcol)],
+                    },
+                    'down': {
+                        'val': [highsRanging.col_cost_dn.value_[ii] for ii in range(numcol)],
+                        'obj': [highsRanging.col_cost_dn.objective_[ii] for ii in range(numcol)],
+                        'in_var': [highsRanging.col_cost_dn.in_var_[ii] for ii in range(numcol)],
+                        'out_var': [highsRanging.col_cost_dn.ou_var_[ii] for ii in range(numcol)],
+                    },
                 },
-                'col_cost_dn': {
-                    'val': [highsRanging.col_cost_dn.value_[ii] for ii in range(highsRanging.col_cost_dn.value_.size())],
-                    'obj': [highsRanging.col_cost_dn.objective_[ii] for ii in range(highsRanging.col_cost_dn.objective_.size())],
-                    'in_var': [highsRanging.col_cost_dn.in_var_[ii] for ii in range(highsRanging.col_cost_dn.in_var_.size())],
-                    'out_var': [highsRanging.col_cost_dn.ou_var_[ii] for ii in range(highsRanging.col_cost_dn.ou_var_.size())],
+                # HiGHS col_bnd_[up|down]
+                'bounds': {
+                    'up': {
+                        'val': [highsRanging.col_bound_up.value_[ii] for ii in range(numcol)],
+                        'obj': [highsRanging.col_bound_up.objective_[ii] for ii in range(numcol)],
+                        'in_var': [highsRanging.col_bound_up.in_var_[ii] for ii in range(numcol)],
+                        'out_var': [highsRanging.col_bound_up.ou_var_[ii] for ii in range(numcol)],
+                    },
+                    'down': {
+                        'val': [highsRanging.col_bound_dn.value_[ii] for ii in range(numcol)],
+                        'obj': [highsRanging.col_bound_dn.objective_[ii] for ii in range(numcol)],
+                        'in_var': [highsRanging.col_bound_dn.in_var_[ii] for ii in range(numcol)],
+                        'out_var': [highsRanging.col_bound_dn.ou_var_[ii] for ii in range(numcol)],
+                    },
                 },
-                'col_bnd_up': {
-                    'val': [highsRanging.col_bound_up.value_[ii] for ii in range(highsRanging.col_bound_up.value_.size())],
-                    'obj': [highsRanging.col_bound_up.objective_[ii] for ii in range(highsRanging.col_bound_up.objective_.size())],
-                    'in_var': [highsRanging.col_bound_up.in_var_[ii] for ii in range(highsRanging.col_bound_up.in_var_.size())],
-                    'out_var': [highsRanging.col_bound_up.ou_var_[ii] for ii in range(highsRanging.col_bound_up.ou_var_.size())],
+                # HiGHS row_bnd_[up|down]
+                'constraints': {
+                    'up': {
+                        'val': [highsRanging.row_bound_up.value_[ii] for ii in range(numrow)],
+                        'obj': [highsRanging.row_bound_up.objective_[ii] for ii in range(numrow)],
+                        'in_var': [highsRanging.row_bound_up.in_var_[ii] for ii in range(numrow)],
+                        'out_var': [highsRanging.row_bound_up.ou_var_[ii] for ii in range(numrow)],
+                    },
+                    'down': {
+                        'val': [highsRanging.row_bound_dn.value_[ii] for ii in range(numrow)],
+                        'obj': [highsRanging.row_bound_dn.objective_[ii] for ii in range(numrow)],
+                        'in_var': [highsRanging.row_bound_dn.in_var_[ii] for ii in range(numrow)],
+                        'out_var': [highsRanging.row_bound_dn.ou_var_[ii] for ii in range(numrow)],
+                    },
                 },
-                'col_bnd_dn': {
-                    'val': [highsRanging.col_bound_dn.value_[ii] for ii in range(highsRanging.col_bound_dn.value_.size())],
-                    'obj': [highsRanging.col_bound_dn.objective_[ii] for ii in range(highsRanging.col_bound_dn.objective_.size())],
-                    'in_var': [highsRanging.col_bound_dn.in_var_[ii] for ii in range(highsRanging.col_bound_dn.in_var_.size())],
-                    'out_var': [highsRanging.col_bound_dn.ou_var_[ii] for ii in range(highsRanging.col_bound_dn.ou_var_.size())],
-                },
-                'row_bnd_up': {
-                    'val': [highsRanging.row_bound_up.value_[ii] for ii in range(highsRanging.row_bound_up.value_.size())],
-                    'obj': [highsRanging.row_bound_up.objective_[ii] for ii in range(highsRanging.row_bound_up.objective_.size())],
-                    'in_var': [highsRanging.row_bound_up.in_var_[ii] for ii in range(highsRanging.row_bound_up.in_var_.size())],
-                    'out_var': [highsRanging.row_bound_up.ou_var_[ii] for ii in range(highsRanging.row_bound_up.ou_var_.size())],
-                },
-                'row_bnd_dn': {
-                    'val': [highsRanging.row_bound_dn.value_[ii] for ii in range(highsRanging.row_bound_dn.value_.size())],
-                    'obj': [highsRanging.row_bound_dn.objective_[ii] for ii in range(highsRanging.row_bound_dn.objective_.size())],
-                    'in_var': [highsRanging.row_bound_dn.in_var_[ii] for ii in range(highsRanging.row_bound_dn.in_var_.size())],
-                    'out_var': [highsRanging.row_bound_dn.ou_var_[ii] for ii in range(highsRanging.row_bound_dn.ou_var_.size())],
-                },
-            },
+            }
         else:
             ranging = None
         solution = highs.getSolution()
@@ -735,9 +753,13 @@ def _highs_wrapper(
             # Note: this is for all constraints (A_ub and A_eq)
             'slack': [rhs[ii] - solution.row_value[ii] for ii in range(numrow)],
 
-            # We'll need the basis statuses to know if lagrangians for bounds
+            # We'll need the col basis statuses to know if lagrangians for bounds
             # are upper or lower
-            'basis_statuses': [<int> basis.col_status[ii] for ii in range(numcol)],
+            'col_statuses': [<int> basis.col_status[ii] for ii in range(numcol)],
+
+            # Additionally we need the row basis statuses to make sense of the
+            # ranging information
+            'row_statuses': None if not ret_ranging else [<int> basis.row_status[ii] for ii in range(numrow)],
 
             # slacks in HiGHS appear as Ax - s, not Ax + s, so lambda is negated;
             # lambda are the lagrange multipliers associated with Ax=b

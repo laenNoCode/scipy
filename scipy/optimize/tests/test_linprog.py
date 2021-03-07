@@ -27,6 +27,9 @@ try:
 except ImportError:
     has_cholmod = False
 
+from scipy.optimize._highs._highs_constants import (HIGHS_BASIS_STATUS_BASIC,
+                                                    HIGHS_BASIS_STATUS_LOWER)
+
 
 def _assert_iteration_limit_reached(res, maxiter):
     assert_(not res.success, "Incorrectly reported success")
@@ -1665,6 +1668,8 @@ class LinprogHiGHSTests(LinprogCommonTests):
         options.update(self.options)
         assert_warns(OptimizeWarning, f, options=options)
 
+    @pytest.mark.skip('Number of basis changes (not primal/dual pushes)'
+                      ' is now reported by HiGHS has the crossover count')
     def test_crossover(self):
         c = np.array([1, 1]) * -1  # maximize
         A_ub = np.array([[1, 1]])
@@ -1738,10 +1743,102 @@ class LinprogHiGHSTests(LinprogCommonTests):
 
     def test_ranging(self):
         c, A_ub, b_ub, A_eq, b_eq, bounds = very_random_gen(seed=0)
+        options = {k: v for k, v in self.options.items()}
+        options['ranging'] = True
         res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
-                      bounds=bounds, method=self.method, options=self.options)
-        print(res)
-        assert False
+                      bounds=bounds, method=self.method, options=options)
+        assert res.ranging is not None
+        _ranging_checks(c, A_ub, b_ub, A_eq, b_eq, bounds, self.method, options, res)
+
+
+def _ranging_checks(c, A_ub, b_ub, A_eq, b_eq, bounds, method, options,
+                    res0):
+    check_opts = {k: v for k, v in options.items()}
+    check_opts['ranging'] = False
+    f0 = res0.fun
+    # print(res0.ranging)
+
+    rel_error_tol = 1e-10
+    rel_error_denom = np.max((1.0, np.abs(f0)))
+
+    numcols = len(c)
+    numrows = len(b_ub) + len(b_eq)
+    for field, n in (('costs', numcols),
+                     ('bounds', numrows),
+                     ('constraints', numrows)):
+        for direction, indicator in (('up', lambda x0: x0 < np.inf),
+                                     ('down', lambda x0: x0 > -np.inf)):
+            for ii in range(n):
+                val = res0.ranging[field][direction]['val'][ii]
+                obj = res0.ranging[field][direction]['obj'][ii]
+                ci_orig = c[ii]
+                lb_orig = bounds[ii][0]
+                ub_orig = bounds[ii][1]
+                negate_row = False
+                if indicator(val):
+                    if field == 'costs':
+                        c[ii] = val
+                    elif field == 'bounds':
+                        col_status = res0.ranging['col_statuses'][ii]
+                        if col_status != HIGHS_BASIS_STATUS_BASIC:
+                            if bounds[ii][0] == bounds[ii][1]:
+                                bounds[ii] = [val, val]
+                            elif col_status == HIGHS_BASIS_STATUS_LOWER:
+                                bounds[ii][0] = val
+                            else:
+                                bounds[ii][1] = val
+                        else:
+                            if direction == 'up':
+                                bounds[ii][0] = val
+                            else:
+                                bounds[ii][1] = val
+                    elif field == 'constraints':
+                        b_orig = b_ub[ii] if ii < len(b_ub) else b_eq[ii-len(b_ub)]
+                        row_status = res0.ranging['row_statuses'][ii]
+                        if row_status != HIGHS_BASIS_STATUS_BASIC:
+                            if ii < len(b_ub):
+                                b_ub[ii] = val
+                            else:
+                                b_eq[ii-len(b_ub)] = val
+                        else:
+                            if direction == 'up':
+                                if ii < len(b_ub):
+                                    # a new lower bound means negating the row
+                                    # to convert it to an equivalent upper bound
+                                    b_ub[ii] = -val
+                                    A_ub[ii, :] *= -1
+                                    negate_row = True  # mark to revert later
+                                else:
+                                    b_eq[ii-len(b_ub)] = val
+                            else:
+                                if ii < len(b_ub):
+                                    b_ub[ii] = val
+                                else:
+                                    b_eq[ii-len(b_ub)] = val
+                    else:
+                        raise ValueError(f'Ranging field {field} not handled')
+
+
+                    res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+                              bounds=bounds, method=method, options=options)
+                    assert res.success
+                    f = res.fun
+                    rel_error = abs(obj - f)/rel_error_denom
+                    assert rel_error < rel_error_tol
+
+                    # reset
+                    c[ii] = ci_orig
+                    bounds[ii] = [lb_orig, ub_orig]
+
+                    if field == 'constraints':
+                        if ii < len(b_ub):
+                            b_ub[ii] = b_orig
+                            if negate_row:
+                                A_ub[ii, :] *= -1
+                        else:
+                            b_eq[ii-len(b_ub)] = b_orig
+                            if negate_row:
+                                A_ub[ii-len(b_ub), :] *= -1
 
 
 ################################

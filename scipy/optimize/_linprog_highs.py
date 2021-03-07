@@ -50,6 +50,7 @@ from ._highs._highs_constants import (
     HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_DEVEX,
     HIGHS_SIMPLEX_DUAL_EDGE_WEIGHT_STRATEGY_STEEPEST_EDGE,
 
+    HIGHS_BASIS_STATUS_BASIC,
     HIGHS_BASIS_STATUS_LOWER,
     HIGHS_BASIS_STATUS_UPPER,
 )
@@ -86,6 +87,7 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
                    primal_feasibility_tolerance=None,
                    ipm_optimality_tolerance=None,
                    simplex_dual_edge_weight_strategy=None,
+                   ranging=False,
                    **unknown_options):
     r"""
     Solve the following linear programming problem using one of the HiGHS
@@ -149,6 +151,8 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
 
         Curently, using ``None`` always selects ``'steepest-devex'``, but this
         may change as new options become available.
+
+    ranging : bool
 
     unknown_options : dict
         Optional arguments not used by this particular solver. If
@@ -345,7 +349,7 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
     ub = _replace_inf(ub)
 
     res = _highs_wrapper(c, A.indptr, A.indices, A.data, lhs, rhs,
-                         lb, ub, options)
+                         lb, ub, ranging, options)
 
     # HiGHS represents constraints as lhs/rhs, so
     # Ax + s = b => Ax = b - s
@@ -367,7 +371,7 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
         upper = np.zeros(len(c))
         lower = np.zeros(len(c))
         bound_duals = res['s']
-        basis_statuses = res['basis_statuses']
+        basis_statuses = res['col_statuses']
         for ii, (bnd, status) in enumerate(zip(bound_duals, basis_statuses)):
             if status == HIGHS_BASIS_STATUS_LOWER:
                 lower[ii] = bnd
@@ -376,9 +380,6 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
     else:
         ineqlin, eqlin = None, None
         upper, lower = None, None
-
-    # this needs to be updated if we start choosing the solver intelligently
-    solvers = {"ipm": "highs-ipm", "simplex": "highs-ds", None: "highs-ds"}
 
     # HiGHS will report OPTIMAL if the scaled model is solved to optimality
     # even if the unscaled original model is infeasible;
@@ -392,6 +393,12 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
                               'the option `disp: True`.')
     else:
         status, message = statuses[res['status']]
+
+    # package the col/row basis statuses in ranging information
+    # as it's needed to interpret the results
+    if res.get('ranging'):
+        res['ranging']['col_statuses'] = res.get('col_statuses')
+        res['ranging']['row_statuses'] = res.get('row_statuses')
 
     sol = {'x': np.array(res['x']) if 'x' in res else None,
            'slack': slack,
