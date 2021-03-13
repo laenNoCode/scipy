@@ -15,7 +15,7 @@ References
 
 import inspect
 import numpy as np
-from .optimize import _check_unknown_options, OptimizeWarning
+from .optimize import _check_unknown_options, OptimizeWarning, OptimizeResult
 from warnings import warn
 from ._highs._highs_wrapper import _highs_wrapper
 from ._highs._highs_constants import (
@@ -55,6 +55,63 @@ from ._highs._highs_constants import (
     HIGHS_BASIS_STATUS_UPPER,
 )
 from scipy.sparse import csc_matrix, vstack, issparse
+
+
+class RangingFields(OptimizeResult):
+    '''Holds LP sensitivity ranging information for all columns or rows.
+
+    Attributes
+    ----------
+    val : np.ndarray[float]
+        Each entry corresponds to a row (in the case of 'ineqlin'/'eqlin') or
+        column (in the case of 'costs'/'bounds') at the same index.
+        The sensitivity information is valid if the  'val' is finite, i.e.
+        ``val < inf`` for 'up' or ``val > -inf`` for 'down'.
+        In the case of 'bounds', each entry is a tuple of '(lower, upper)'.
+        Either or both values may have a positive or negative change, so
+        comparison to both original bounds values is necessary to check
+        finite-ness.
+    fun : np.ndarray[float]
+        Each entry corresponds to the value of the objective function if the
+        modifed LP were to be solved using the entry in 'val' for the positive
+        ('up') or negative ('down') change.
+    basis_in : np.ndarray[int]
+        The index of the column to enter the basis or row constraint that would
+        become binding if the 'val' RHS was substituted.  A value of '-1'
+        indicates that there is no change in basis/binding-constraint.
+    basis_out : np.ndarray[int]
+        The index of the basis column exiting the basis or row constraint that
+        would cease to be binding if the 'val' RHS was substituted.  A value of
+        '-1' indicates that there is no change in basis/binding-constraint.
+    fac : np.ndarray[int], optional
+        A sign factor to convert 'ineqlin.up.val' and the corresponding row of
+        'A_ub' in the case of a basic row basis status change as required to
+        convert a new lower bound to an equivalent upper bound.
+
+    Notes
+    -----
+    RangingFields entries correspond to rows in the constraint matrices for
+    'ineqlin'/'eqlin' or to columns for 'costs'/'bounds'.
+
+    This information is only garanteed to be accurate if the LP is not primal
+    or dual degenerate.
+    '''
+    def __init__(self, val, fun, basis_in, basis_out, has_fac: bool = False):
+        super().__init__()
+        self.val = np.asarray(val, dtype=float)
+        self.fun = np.asarray(fun, dtype=float)
+        self.basis_in = np.asarray(basis_in, dtype=int)
+        self.basis_out = np.asarray(basis_out, dtype=int)
+        if has_fac:
+            # only ranging.ineqlin.up should have the 'fac' field
+            self.fac = np.ones(self.val.size, dtype=int)
+
+
+class RangingInfo(OptimizeResult):
+    def __init__(self, up: RangingFields, down: RangingFields):
+        super().__init__()
+        self.up = up
+        self.down = down
 
 
 def _replace_inf(x):
@@ -364,22 +421,109 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
     if 'lambda' in res:
         # lagrange multipliers for equalities/inequalities
         lamda = res['lambda']
-        ineqlin = np.array(lamda[:len(b_ub)])
-        eqlin = np.array(lamda[len(b_ub):])
+        marg_ineqlin = np.array(lamda[:len(b_ub)])
+        marg_eqlin = np.array(lamda[len(b_ub):])
 
         # now get lagrange multipliers corresponding to bounds
-        upper = np.zeros(len(c))
-        lower = np.zeros(len(c))
+        marg_upper = np.zeros(len(c))
+        marg_lower = np.zeros(len(c))
         bound_duals = res['s']
         basis_statuses = res['col_statuses']
         for ii, (bnd, status) in enumerate(zip(bound_duals, basis_statuses)):
             if status == HIGHS_BASIS_STATUS_LOWER:
-                lower[ii] = bnd
+                marg_lower[ii] = bnd
             elif status == HIGHS_BASIS_STATUS_UPPER:
-                upper[ii] = bnd
+                marg_upper[ii] = bnd
     else:
-        ineqlin, eqlin = None, None
-        upper, lower = None, None
+        marg_ineqlin, marg_eqlin = None, None
+        marg_upper, marg_lower = None, None
+
+    if res.get('ranging'):
+        col_statuses = res.get('col_statuses')
+        row_statuses = res.get('row_statuses')
+
+        rang_costs = RangingInfo(
+            up=RangingFields(
+                val=res['ranging']['costs']['up']['val'],
+                fun=res['ranging']['costs']['up']['obj'],
+                basis_in=res['ranging']['costs']['up']['in_var'],
+                basis_out=res['ranging']['costs']['up']['out_var']),
+            down=RangingFields(
+                val=res['ranging']['costs']['down']['val'],
+                fun=res['ranging']['costs']['down']['obj'],
+                basis_in=res['ranging']['costs']['down']['in_var'],
+                basis_out=res['ranging']['costs']['down']['out_var']))
+        rang_ineqlin = RangingInfo(
+            up=RangingFields(
+                val=res['ranging']['constraints']['up']['val'][:len(b_ub)],
+                fun=res['ranging']['constraints']['up']['obj'][:len(b_ub)],
+                basis_in=res['ranging']['constraints']['up']['in_var'][:len(b_ub)],
+                basis_out=res['ranging']['constraints']['up']['out_var'][:len(b_ub)],
+                has_fac=True),
+            down=RangingFields(
+                val=res['ranging']['constraints']['down']['val'][:len(b_ub)],
+                fun=res['ranging']['constraints']['down']['obj'][:len(b_ub)],
+                basis_in=res['ranging']['constraints']['down']['in_var'][:len(b_ub)],
+                basis_out=res['ranging']['constraints']['down']['out_var'][:len(b_ub)]))
+
+        # basic columns require the addition of a new lower bound
+        # which means negating the row to convert it to an equivalent
+        # upper bound; add a sign "fac" to tell caller what to do
+        for ii, rstat in enumerate(row_statuses[:len(b_ub)]):
+            if rstat == HIGHS_BASIS_STATUS_BASIC:
+                rang_ineqlin.up.fac[ii] = -1
+
+        rang_eqlin = RangingInfo(
+            up=RangingFields(
+                val=res['ranging']['constraints']['up']['val'][len(b_ub):],
+                fun=res['ranging']['constraints']['up']['obj'][len(b_ub):],
+                basis_in=res['ranging']['constraints']['up']['in_var'][len(b_ub):],
+                basis_out=res['ranging']['constraints']['up']['out_var'][len(b_ub):]),
+            down=RangingFields(
+                val=res['ranging']['constraints']['down']['val'][len(b_ub):],
+                fun=res['ranging']['constraints']['down']['obj'][len(b_ub):],
+                basis_in=res['ranging']['constraints']['down']['in_var'][len(b_ub):],
+                basis_out=res['ranging']['constraints']['down']['out_var'][len(b_ub):]))
+
+        rang_bounds_up_val = [None]*len(c)
+        rang_bounds_down_val = [None]*len(c)
+        for ii, cstat in enumerate(col_statuses):
+            if cstat != HIGHS_BASIS_STATUS_BASIC:
+                if bounds[ii][0] == bounds[ii][1]:
+                    rang_bounds_up_val[ii] = (res['ranging']['bounds']['up']['val'][ii],
+                                              res['ranging']['bounds']['up']['val'][ii])
+                    rang_bounds_down_val[ii] = (res['ranging']['bounds']['down']['val'][ii],
+                                                res['ranging']['bounds']['down']['val'][ii])
+                elif cstat == HIGHS_BASIS_STATUS_LOWER:
+                    rang_bounds_up_val[ii] = (res['ranging']['bounds']['up']['val'][ii],
+                                              bounds[ii][1])
+                    rang_bounds_down_val[ii] = (res['ranging']['bounds']['down']['val'][ii],
+                                                bounds[ii][1])
+                else:
+                    rang_bounds_up_val[ii] = (bounds[ii][0], res['ranging']['bounds']['up']['val'][ii])
+                    rang_bounds_down_val[ii] = (bounds[ii][0], res['ranging']['bounds']['down']['val'][ii])
+            else:
+                rang_bounds_up_val[ii] = (res['ranging']['bounds']['up']['val'][ii], bounds[ii][1])
+                rang_bounds_down_val[ii] = (bounds[ii][0], res['ranging']['bounds']['down']['val'][ii])
+
+        # up/down are identical except for 'val' which depends on
+        # column basis status
+        rang_bounds = RangingInfo(
+            up=RangingFields(
+                val=rang_bounds_up_val,
+                fun=res['ranging']['bounds']['up']['obj'],
+                basis_in=res['ranging']['bounds']['up']['in_var'],
+                basis_out=res['ranging']['bounds']['up']['out_var']),
+            down=RangingFields(
+                val=rang_bounds_down_val,
+                fun=res['ranging']['bounds']['down']['obj'],
+                basis_in=res['ranging']['bounds']['down']['in_var'],
+                basis_out=res['ranging']['bounds']['down']['out_var']))
+    else:
+        rang_costs = None
+        rang_ineqlin = None
+        rang_eqlin = None
+        rang_bounds = None
 
     # HiGHS will report OPTIMAL if the scaled model is solved to optimality
     # even if the unscaled original model is infeasible;
@@ -394,20 +538,19 @@ def _linprog_highs(lp, solver, time_limit=None, presolve=True,
     else:
         status, message = statuses[res['status']]
 
-    # package the col/row basis statuses in ranging information
-    # as it's needed to interpret the results
-    if res.get('ranging'):
-        res['ranging']['col_statuses'] = res.get('col_statuses')
-        res['ranging']['row_statuses'] = res.get('row_statuses')
-
     sol = {'x': np.array(res['x']) if 'x' in res else None,
            'slack': slack,
-           'ranging': res.get('ranging'),
+           'ranging': {
+               'ineqlin': rang_ineqlin,
+               'eqlin': rang_eqlin,
+               'costs': rang_costs,
+               'bounds': rang_bounds,
+           },
            'marginals': {
-               'ineqlin': ineqlin,
-               'eqlin': eqlin,
-               'upper': upper,
-               'lower': lower,
+               'ineqlin': marg_ineqlin,
+               'eqlin': marg_eqlin,
+               'upper': marg_upper,
+               'lower': marg_lower,
            },
            'fun': res.get('fun'),
            'con': con,

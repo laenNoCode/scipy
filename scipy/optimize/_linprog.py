@@ -607,6 +607,7 @@ def linprog(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
                           sol['con'], lp.bounds, tol, sol['message']))
         sol['success'] = sol['status'] == 0
         sol['marginals'] = OptimizeResult(sol['marginals'])
+        sol['ranging'] = OptimizeResult(sol['ranging'])
         return OptimizeResult(sol)
 
     iteration = 0
