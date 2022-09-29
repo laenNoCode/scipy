@@ -3,7 +3,8 @@ trigger:
   batch: False
   branches:
     include:
-      - mip-timeout-keep-sol
+      - main
+      - maintenance/*
   paths:
     include:
       - '*'
@@ -30,10 +31,7 @@ variables:
     OPENBLAS_NUM_THREADS: 1
 
 stages:
-
 - stage: Main
-  condition: and(succeeded(), eq(dependencies.Check.outputs['Skip.result.start_main'], 'true'))
-  dependsOn: Check
   variables:
     AZURE_CI: 'true'
   jobs:
