@@ -281,7 +281,7 @@ _msg_iter = "Iteration limit reached. (HiGHS Status 14:"
                     reason="Unhandled 32-bit GCC FP bug")
 @pytest.mark.slow
 @pytest.mark.parametrize(["options", "msg"], [({"time_limit": 10}, _msg_time),
-                                              ({"node_limit": 2}, _msg_iter)])
+                                              ({"node_limit": 1}, _msg_iter)])
 def test_milp_timeout_16545(options, msg):
     # Ensure solution is not thrown away if MILP solver times out
     # -- see gh-16545
